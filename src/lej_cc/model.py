@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 
-class ClearanceStatus(str, Enum):
+class ClearanceStatus(StrEnum):
     """The three buckets every shipment line falls into."""
 
     CLEARED = "cleared"

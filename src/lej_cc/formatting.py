@@ -135,7 +135,10 @@ def build_status_blocks(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Open ({len(open_hawbs):,}):*\n{_truncate_list(open_hawbs, max_listed)}",
+                    "text": (
+                        f"*Open ({len(open_hawbs):,}):*\n"
+                        f"{_truncate_list(open_hawbs, max_listed)}"
+                    ),
                 },
             }
         )

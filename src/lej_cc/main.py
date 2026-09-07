@@ -30,7 +30,8 @@ def main() -> int:
     store = JobStore(settings.database_path)
     client = PortGroundClient(settings)
     notifier = SlackNotifier(WebClient(token=settings.slack_bot_token))
-    tracker = Tracker(settings, store, client, notifier, StatusMapper.load(settings.status_map_path))
+    mapper = StatusMapper.load(settings.status_map_path)
+    tracker = Tracker(settings, store, client, notifier, mapper)
     scheduler = PollScheduler(store, tracker)
 
     app = build_app(settings, store, scheduler)

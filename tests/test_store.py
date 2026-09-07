@@ -56,7 +56,7 @@ def test_parallel_jobs_keep_independent_clocks(tmp_path):
     store = make_store(tmp_path)
     now = utcnow()
     first = store.create_job("48820744846", "C1", "U1", run_at=now)
-    second = store.create_job("93600333955", "C1", "U1", run_at=now + timedelta(minutes=15))
+    store.create_job("93600333955", "C1", "U1", run_at=now + timedelta(minutes=15))
 
     store.reschedule(first.id, now + timedelta(minutes=15), percent=50.0, cleared=5, total=10)
 
