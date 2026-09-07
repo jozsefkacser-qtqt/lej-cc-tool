@@ -55,7 +55,19 @@ OPTIONAL_COLUMNS = (
     "Number of hs codes",
 )
 
-_DEFAULT_STATUS_MAP = Path(__file__).resolve().parents[2] / "config" / "status_map.yaml"
+def _status_map_candidates() -> list[Path]:
+    """Where to look for status_map.yaml, in order of preference.
+
+    The installed package sits in site-packages, so a path relative to the
+    module only works for a source checkout. In a container the file is
+    mounted next to the working directory instead, which is what makes
+    editing the mapping possible without rebuilding the image.
+    """
+    return [
+        Path.cwd() / "config" / "status_map.yaml",
+        Path(__file__).resolve().parents[2] / "config" / "status_map.yaml",
+        Path("/app/config/status_map.yaml"),
+    ]
 
 
 class StatusMapper:
@@ -80,10 +92,24 @@ class StatusMapper:
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> StatusMapper:
-        source = Path(path) if path else _DEFAULT_STATUS_MAP
-        if not source.exists():
-            log.warning("status map %s not found, using built-in defaults", source)
+        if path:
+            source: Path | None = Path(path)
+            if not source.exists():  # type: ignore[union-attr]
+                raise SchemaDrift(
+                    f"status map {source} not found",
+                    user_message=f"Configured status map {source} does not exist.",
+                )
+        else:
+            source = next((p for p in _status_map_candidates() if p.exists()), None)
+
+        if source is None:
+            log.warning(
+                "no status_map.yaml found in %s — using built-in defaults",
+                [str(p) for p in _status_map_candidates()],
+            )
             return cls({"cleared": ["cleared"], "not_cleared": ["not cleared", ""]})
+
+        log.debug("loaded status map from %s", source)
         return cls(yaml.safe_load(source.read_text(encoding="utf-8")) or {})
 
 

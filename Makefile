@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt fixtures run docker
+.PHONY: install dev test lint fmt fixtures run doctor docker
 
 install:
 	pip install -e .
@@ -20,6 +20,9 @@ fixtures:
 
 run:
 	python -m lej_cc.main
+
+doctor:
+	python -m lej_cc.doctor
 
 docker:
 	docker compose up --build -d

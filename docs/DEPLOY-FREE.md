@@ -66,62 +66,72 @@ chmod 600 ~/Downloads/ssh-key-*.key
 ssh -i ~/Downloads/ssh-key-*.key ubuntu@<public-ip>
 ```
 
-### 4. Prepare the machine
+### 4. Install the bot
+
+Ubuntu images ship without git, so install it and fetch the repository:
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-
-# 1 GB of RAM is enough, but a little swap avoids surprises
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# Docker
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker ubuntu
-newgrp docker
-```
-
-### 5. Install the bot
-
-```bash
-sudo mkdir -p /opt/lej-cc-tool && sudo chown ubuntu /opt/lej-cc-tool
-git clone https://github.com/jozsefkacser-qtqt/lej-cc-tool.git /opt/lej-cc-tool
+sudo apt update && sudo apt install -y git
+sudo mkdir -p /opt/lej-cc-tool && sudo chown "$USER" /opt/lej-cc-tool
+git clone -b claude/awb-tracking-slack-bot-noy6d8 \
+    https://github.com/jozsefkacser-qtqt/lej-cc-tool.git /opt/lej-cc-tool
 cd /opt/lej-cc-tool
-git checkout claude/awb-tracking-slack-bot-noy6d8
-
-cp .env.example .env
-nano .env        # fill in the three secrets, then Ctrl-O, Enter, Ctrl-X
 ```
 
-The repository is private, so `git clone` will ask for credentials. Use
-your GitHub username and a **personal access token** (Settings → Developer
-settings → Personal access tokens) as the password — not your account
-password.
+The repository is private, so `git clone` asks for credentials. Use your
+GitHub username and a **personal access token** as the password (GitHub →
+Settings → Developer settings → Personal access tokens → Fine-grained
+tokens, with read access to this repository). Your account password will
+not work.
 
-Fill in:
-
-```ini
-SLACK_BOT_TOKEN=xoxb-...        # from the Slack app you created
-SLACK_APP_TOKEN=xapp-...        # from the Slack app you created
-PORTGROUND_API_KEY=...          # the key from PortGround
-SLACK_OPS_CHANNEL=C0123456789   # optional: where global alerts go
-```
-
-Lock the file down — it holds three secrets:
+### 5. Run the setup script
 
 ```bash
-chmod 600 .env
+bash deploy/bootstrap.sh
 ```
 
-### 6. Start it
+It adds swap, installs Docker, asks for the three secrets, runs the
+preflight checks and starts the bot. It is safe to re-run — every step
+checks before it acts, so if something fails you fix it and run the same
+command again.
+
+You will be prompted for:
+
+| Prompt | Where it comes from |
+|---|---|
+| Slack bot token (`xoxb-…`) | Slack app → OAuth & Permissions |
+| Slack app token (`xapp-…`) | Slack app → Basic Information → App-Level Tokens |
+| PortGround API key | The key from PortGround |
+
+Input is hidden while you type. The script writes them to `.env` with
+`chmod 600` and never echoes them back.
+
+### 6. Check it
+
+The preflight runs automatically, but you can run it any time:
 
 ```bash
-docker compose up --build -d
-docker compose logs -f          # Ctrl-C stops watching, not the bot
+sudo docker compose run --rm lej-cc-tool lej-cc-doctor
 ```
 
-You are looking for `lej-cc-tool ready`.
+```
+lej-cc-tool preflight
+
+[  ok  ] configuration    .env loaded
+[  ok  ] slack bot token  xoxb-901… (57 chars)
+[  ok  ] slack app token  xapp-1-A… (91 chars)
+[  ok  ] portground key   BJuvNOZ0… (64 chars)
+[  ok  ] database dir     data is writable
+[  ok  ] download dir     data/downloads is writable
+[  ok  ] status map       'cleared' and 'not cleared' map correctly
+[  ok  ] slack auth       connected as awb_tracker in QT Logistics
+[  ok  ] portground api   downloaded and parsed 48820744846: 225 shipments, 100% cleared
+
+All checks passed — start the bot and try /awb 488-20744846 in Slack.
+```
+
+Every failure names the fix. The most common one is the two Slack tokens
+swapped — the check catches that explicitly.
 
 ### 7. Try it
 
@@ -131,7 +141,7 @@ In Slack, in a channel the bot was invited to:
 /awb 488-20744846
 ```
 
-You should get a status card within a few seconds.
+A status card should appear within a few seconds.
 
 ---
 

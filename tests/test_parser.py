@@ -85,3 +85,23 @@ def test_status_mapper_is_case_and_space_insensitive():
     assert mapper.map("  NOT   cleared ") is ClearanceStatus.NOT_CLEARED
     assert mapper.map("blocked") is ClearanceStatus.OTHER
     assert mapper.map(None) is ClearanceStatus.OTHER
+
+
+def test_status_map_is_found_from_the_working_directory(tmp_path, monkeypatch):
+    """In the container the package lives in site-packages, so the mapping is
+    found next to the working directory instead."""
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "status_map.yaml").write_text("cleared: [freigegeben]\nnot_cleared: [offen]\n")
+    monkeypatch.chdir(tmp_path)
+
+    mapper = StatusMapper.load()
+    assert mapper.map("freigegeben") is ClearanceStatus.CLEARED
+    assert mapper.map("offen") is ClearanceStatus.NOT_CLEARED
+    # The reference vocabulary is no longer mapped, which is the point of the file.
+    assert mapper.map("cleared") is ClearanceStatus.OTHER
+
+
+def test_missing_configured_status_map_is_an_error_not_a_silent_default(tmp_path):
+    with pytest.raises(SchemaDrift):
+        StatusMapper.load(tmp_path / "nope.yaml")

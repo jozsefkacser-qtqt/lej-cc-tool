@@ -140,7 +140,17 @@ follow [`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md). The bot needs no
 inbound network access, so no ports are opened and no firewall rule is
 required.
 
-### 3. Smoke-test without Slack
+### 3. Check the setup
+
+```bash
+make doctor          # or: lej-cc-doctor
+```
+
+Validates the config, both Slack tokens, storage permissions, the status
+map, Slack authentication and a live PortGround download — each failure
+naming its fix. Add `--offline` to skip the two network checks.
+
+### 4. Smoke-test without Slack
 
 ```bash
 python -m lej_cc.cli 488-20744846              # live call

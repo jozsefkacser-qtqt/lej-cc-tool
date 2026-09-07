@@ -20,6 +20,8 @@ google = ["google-api-python-client>=2.149", "google-auth>=2.35"]
 
 [project.scripts]
 lej-cc = "lej_cc.main:main"
+lej-cc-doctor = "lej_cc.doctor:main"
+lej-cc-check = "lej_cc.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
