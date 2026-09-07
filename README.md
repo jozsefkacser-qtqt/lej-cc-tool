@@ -110,16 +110,21 @@ the first time it appears and the mapping gets extended.
 
 ### 1. Slack app
 
-Create an app at api.slack.com/apps, then:
+Everything the app needs is in `slack-app-manifest.yaml`, so there is
+nothing to configure by hand:
 
-- **OAuth & Permissions** → bot scopes: `commands`, `chat:write`,
-  `chat:write.public`, `files:write`, `app_mentions:read`
-- **Socket Mode** → enable, generate an app token with `connections:write`
-- **Slash commands** → `/awb`, description "Track customs clearance"
-- **Event subscriptions** → subscribe to `app_mention`
-- Install to the workspace, invite the bot to the channel
+1. <https://api.slack.com/apps> → **Create New App** → **From a manifest**
+2. Pick the workspace → paste `slack-app-manifest.yaml` → **Create**
+3. **Basic Information → App-Level Tokens → Generate Token and Scopes**:
+   name it `socket`, add the `connections:write` scope, generate.
+   Copy the `xapp-…` value → `SLACK_APP_TOKEN`
+4. **Install App → Install to Workspace** → approve.
+   Copy the `xoxb-…` Bot User OAuth Token → `SLACK_BOT_TOKEN`
+5. In Slack: `/invite @AWB Tracker` in the channel you want to use
 
-Socket Mode means no public URL and no inbound firewall rule.
+Socket Mode means no public URL and no inbound firewall rule. If the
+workspace requires app approval, step 4 goes to a workspace admin —
+creating the app in steps 1–3 does not.
 
 ### 2. Run
 

@@ -1,0 +1,46 @@
+# Slack app manifest for lej-cc-tool.
+#
+# Create the app from this file:
+#   https://api.slack.com/apps  ->  Create New App  ->  From a manifest
+#   -> pick the workspace -> paste this YAML -> Create
+#
+# Socket Mode is enabled, so there are no request URLs to configure and the
+# bot needs no public endpoint or inbound firewall rule.
+display_information:
+  name: AWB Customs Tracker
+  description: Tracks customs-clearance completeness of master air waybills at LEJ
+  background_color: "#1f3b57"
+  long_description: |
+    Post a master air waybill in Slack and the bot reports how much of it has
+    cleared customs. It checks immediately, again after 15 minutes, then every
+    30 minutes until everything is cleared, attaching PortGround's shipment
+    status workbook with each update. Several AWBs are tracked in parallel.
+
+features:
+  bot_user:
+    display_name: AWB Tracker
+    always_online: true
+  slash_commands:
+    - command: /awb
+      description: Track customs clearance for a master AWB
+      usage_hint: 488-20744846 | list | stop <awb> | help
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - commands           # receive /awb
+      - chat:write         # post status updates
+      - chat:write.public  # post in channels the bot was not invited to
+      - files:write        # attach the downloaded workbook
+      - app_mentions:read  # respond to @AWB Tracker 488-20744846
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: true       # required for the Refresh / Stop buttons
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false
