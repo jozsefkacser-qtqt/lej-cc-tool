@@ -1,0 +1,18 @@
+# Maps the raw "Final Status" column of PortGround's export onto the buckets
+# the bot reports. Matching is case-insensitive and whitespace-collapsed.
+#
+# Anything not listed here lands in OTHER and is reported explicitly in Slack
+# with its raw value. That is deliberate: if PortGround introduces a status
+# like "blocked" or "seized", we want to see it the first time it appears
+# rather than silently miscount it. When a new value shows up, add it below.
+#
+# Reference exports checked 2026-09-07: 48820744846 (225 rows, all "cleared")
+# and 93600333955 (1605 rows, all "not cleared"). Those are the only two
+# values observed so far.
+
+cleared:
+  - cleared
+
+not_cleared:
+  - not cleared
+  - ""          # blank Final Status = registered but not yet processed

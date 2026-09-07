@@ -1,0 +1,11 @@
+services:
+  lej-cc-tool:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data          # SQLite job store + downloaded workbooks
+      - ./config:/app/config:ro   # status_map.yaml, editable without a rebuild
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

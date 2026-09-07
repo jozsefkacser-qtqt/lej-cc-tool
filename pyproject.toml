@@ -1,0 +1,45 @@
+[project]
+name = "lej-cc-tool"
+version = "0.1.0"
+description = "Slack bot that tracks customs-clearance completeness of air waybills at LEJ"
+requires-python = ">=3.11"
+dependencies = [
+    "slack-bolt>=1.21",
+    "slack-sdk>=3.33",
+    "httpx>=0.27",
+    "openpyxl>=3.1",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "PyYAML>=6.0",
+    "tenacity>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.7", "mypy>=1.13"]
+google = ["google-api-python-client>=2.149", "google-auth>=2.35"]
+
+[project.scripts]
+lej-cc = "lej_cc.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
