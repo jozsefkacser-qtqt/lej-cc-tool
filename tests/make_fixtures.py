@@ -57,16 +57,27 @@ def write(path: Path, mawb: str, statuses: list[str]) -> None:
     workbook.save(path)
 
 
-def main() -> None:
-    out = Path(__file__).parent / "data"
-    out.mkdir(exist_ok=True)
-    write(out / "all_cleared.xlsx", "48820744846", ["cleared"] * 10)
-    write(out / "none_cleared.xlsx", "93600333955", ["not cleared"] * 12)
-    write(out / "partial.xlsx", "48820744846", ["cleared"] * 6 + ["not cleared"] * 4)
-    write(out / "unknown_status.xlsx", "48820744846", ["cleared"] * 3 + ["blocked", "seized"])
-    write(out / "empty.xlsx", "48820744846", [])
+def write_all(out_dir: Path) -> Path:
+    """Write the full fixture set into `out_dir` and return it.
+
+    Called by conftest at the start of every test session, so the workbooks
+    are never committed. They are generated data, and a binary in git is a
+    binary somebody eventually edits by hand.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write(out_dir / "all_cleared.xlsx", "48820744846", ["cleared"] * 10)
+    write(out_dir / "none_cleared.xlsx", "93600333955", ["not cleared"] * 12)
+    write(out_dir / "partial.xlsx", "48820744846", ["cleared"] * 6 + ["not cleared"] * 4)
+    write(out_dir / "unknown_status.xlsx", "48820744846", ["cleared"] * 3 + ["blocked", "seized"])
+    write(out_dir / "empty.xlsx", "48820744846", [])
     # A file whose rows belong to a different master AWB.
-    write(out / "wrong_mawb.xlsx", "12345678901", ["cleared"] * 3)
+    write(out_dir / "wrong_mawb.xlsx", "12345678901", ["cleared"] * 3)
+    return out_dir
+
+
+def main() -> None:
+    """Write them to tests/data too, for eyeballing in Excel."""
+    out = write_all(Path(__file__).parent / "data")
     print("fixtures written to", out)
 
 
