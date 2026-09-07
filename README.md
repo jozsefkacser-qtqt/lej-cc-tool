@@ -135,6 +135,11 @@ make test
 make run                  # or: docker compose up --build -d
 ```
 
+To deploy it for free — on your own machine or an Always Free cloud VM —
+follow [`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md). The bot needs no
+inbound network access, so no ports are opened and no firewall rule is
+required.
+
 ### 3. Smoke-test without Slack
 
 ```bash

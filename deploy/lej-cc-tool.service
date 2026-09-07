@@ -1,0 +1,41 @@
+# systemd unit for running the bot without Docker.
+#
+#   sudo cp deploy/lej-cc-tool.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lej-cc-tool
+#
+# Assumes the repo is at /opt/lej-cc-tool with a virtualenv in .venv and a
+# .env file alongside it.
+
+[Unit]
+Description=LEJ customs-clearance Slack bot
+Documentation=https://github.com/jozsefkacser-qtqt/lej-cc-tool
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lejcc
+Group=lejcc
+WorkingDirectory=/opt/lej-cc-tool
+EnvironmentFile=/opt/lej-cc-tool/.env
+ExecStart=/opt/lej-cc-tool/.venv/bin/lej-cc
+
+# Socket Mode reconnects on its own, but if the process dies outright,
+# bring it straight back. Tracking state lives in SQLite, so nothing is lost.
+Restart=always
+RestartSec=10
+
+# The bot opens only outbound connections and writes only to data/.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/lej-cc-tool/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lej-cc
+
+[Install]
+WantedBy=multi-user.target

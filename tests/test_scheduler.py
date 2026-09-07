@@ -53,3 +53,63 @@ def test_jobs_not_yet_due_are_left_alone(tmp_path):
     PollScheduler(store, tracker).tick()  # type: ignore[arg-type]
 
     assert tracker.seen == ["48820744846"]
+
+
+def test_old_downloads_are_purged(tmp_path):
+    """Free-tier disks are small; workbooks must not accumulate forever."""
+    import os
+    import time
+
+    from lej_cc.maintenance import purge_old_downloads
+
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    fresh = downloads / "48820744846_new.xlsx"
+    stale = downloads / "48820744846_old.xlsx"
+    fresh.write_bytes(b"PK")
+    stale.write_bytes(b"PK")
+    old = time.time() - 40 * 86400
+    os.utime(stale, (old, old))
+
+    assert purge_old_downloads(downloads, retention_days=30) == 1
+    assert fresh.exists() and not stale.exists()
+
+
+def test_retention_zero_disables_purging(tmp_path):
+    import os
+    import time
+
+    from lej_cc.maintenance import purge_old_downloads
+
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    ancient = downloads / "old.xlsx"
+    ancient.write_bytes(b"PK")
+    old = time.time() - 999 * 86400
+    os.utime(ancient, (old, old))
+
+    assert purge_old_downloads(downloads, retention_days=0) == 0
+    assert ancient.exists()
+
+
+def test_housekeeping_runs_at_most_once_per_interval(tmp_path):
+    from lej_cc.config import Settings
+
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+
+    class StubTracker:
+        settings = Settings(
+            slack_bot_token="x",
+            slack_app_token="x",
+            portground_api_key="x",
+            download_dir=downloads,
+            download_retention_days=30,
+        )
+
+    scheduler = PollScheduler(store, StubTracker())  # type: ignore[arg-type]
+    scheduler.housekeeping()
+    first = scheduler._last_housekeeping
+    scheduler.housekeeping()
+    assert scheduler._last_housekeeping == first  # second call is a no-op

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
+from .maintenance import purge_old_downloads
 from .store import JobStore
 from .tracker import Tracker
 
@@ -33,6 +35,7 @@ class PollScheduler:
         self.max_parallel = max_parallel
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_housekeeping = 0.0
 
     def start(self) -> None:
         if self._thread:
@@ -57,10 +60,20 @@ class PollScheduler:
                 pool.submit(self.tracker.run_once, job)
         return len(jobs)
 
+    def housekeeping(self, interval_seconds: int = 3600) -> None:
+        """Purge stale downloads, at most once per `interval_seconds`."""
+        now = time.monotonic()
+        if now - self._last_housekeeping < interval_seconds:
+            return
+        self._last_housekeeping = now
+        settings = self.tracker.settings
+        purge_old_downloads(settings.download_dir, settings.download_retention_days)
+
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
                 self.tick()
+                self.housekeeping()
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 log.exception("scheduler tick failed")
             self._stop.wait(self.tick_seconds)
