@@ -74,24 +74,69 @@ The rule of thumb: the prompt must end in `$`, not `>`.
 
 ### Fastest path — no Docker, about five minutes
 
+> **Run these one line at a time.** Pasting the whole block at once fails
+> in a way that is hard to read: `sudo` stops to ask for your password, and
+> every remaining pasted line is consumed as a password attempt. You get
+> three "Authentication failed" messages and nothing is installed.
+
+Start in your home directory. If you reached Ubuntu by typing `wsl` inside
+PowerShell, you are in `/mnt/c/Windows/system32`, which is the wrong place:
+
 ```bash
-sudo apt update && sudo apt install -y python3-venv git
-
-# Clone into the WSL filesystem, NOT /mnt/c — much faster, no permission oddities
-git clone -b claude/awb-tracking-slack-bot-noy6d8 https://github.com/jozsefkacser-qtqt/lej-cc-tool.git ~/lej-cc-tool
-cd ~/lej-cc-tool
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-cp .env.example .env
-nano .env          # paste the three secrets, Ctrl-O, Enter, Ctrl-X
-chmod 600 .env
-
-lej-cc-doctor      # checks everything, including a live PortGround download
-lej-cc             # start the bot; Ctrl-C stops it
+cd ~
 ```
+
+Check what is already installed — Ubuntu images vary, and if these are
+present you can skip the `sudo` step entirely:
+
+```bash
+git --version; python3 --version; python3 -m venv --help >/dev/null 2>&1 && echo "venv: OK" || echo "venv: MISSING"
+```
+
+Only if something is missing:
+
+```bash
+sudo apt update
+```
+```bash
+sudo apt install -y python3-venv python3-pip git
+```
+
+Then, one line at a time:
+
+```bash
+git clone -b claude/awb-tracking-slack-bot-noy6d8 https://github.com/jozsefkacser-qtqt/lej-cc-tool.git ~/lej-cc-tool
+```
+```bash
+cd ~/lej-cc-tool
+```
+```bash
+python3 -m venv .venv
+```
+```bash
+source .venv/bin/activate
+```
+```bash
+pip install -e .
+```
+```bash
+cp .env.example .env && chmod 600 .env
+```
+```bash
+nano .env
+```
+
+Fill in the three secrets, then Ctrl-O, Enter, Ctrl-X. Finally:
+
+```bash
+lej-cc-doctor
+```
+```bash
+lej-cc
+```
+
+Clone into `~`, never `/mnt/c/...` — the Windows filesystem is far slower
+under WSL and brings its own permission oddities.
 
 Then in Slack: `/awb 488-20744846`.
 
