@@ -34,13 +34,21 @@ def _hhmm(value: datetime | None) -> str:
     return value.astimezone(LOCAL_TZ).strftime("%H:%M") if value else "—"
 
 
-def _truncate_list(hawbs: list[str], limit: int) -> str:
+def _open_section(hawbs: list[str], threshold: int) -> str:
+    """Name the open shipments only while naming them is useful.
+
+    Fifteen tracking numbers followed by "and 19 more" is not a work list --
+    it is noise that hides the count. Past the threshold the message states
+    the number and hands the detail to the attached chase sheet.
+    """
     if not hawbs:
         return "—"
-    shown = ", ".join(f"`{h}`" for h in hawbs[:limit])
-    if len(hawbs) > limit:
-        shown += f"  _…and {len(hawbs) - limit:,} more (see attached file)_"
-    return shown
+    if len(hawbs) <= threshold:
+        return ", ".join(f"`{h}`" for h in hawbs)
+    return (
+        f"{len(hawbs):,} shipments still open — see the attached "
+        "*OPEN…xlsx* for the list, oldest first."
+    )
 
 
 def summary_line(snapshot: Snapshot) -> str:
@@ -57,7 +65,7 @@ def build_status_blocks(
     diff: SnapshotDiff | None = None,
     next_run_at: datetime | None = None,
     requested_by: str | None = None,
-    max_listed: int = 15,
+    inline_threshold: int = 10,
     is_final: bool = False,
     poll_count: int = 0,
 ) -> list[dict]:
@@ -137,7 +145,7 @@ def build_status_blocks(
                     "type": "mrkdwn",
                     "text": (
                         f"*Open ({len(open_hawbs):,}):*\n"
-                        f"{_truncate_list(open_hawbs, max_listed)}"
+                        f"{_open_section(open_hawbs, inline_threshold)}"
                     ),
                 },
             }

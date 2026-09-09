@@ -46,8 +46,15 @@ class Settings(BaseSettings):
     post_unchanged_updates: bool = False
     #: Attach the workbook only when something changed (plus first + final).
     attach_file_on_change_only: bool = True
-    #: How many open HAWBs to name inline before deferring to the attachment.
-    max_listed_hawbs: int = 15
+    #: List open HAWBs in the message only while there are at most this many.
+    #: Beyond it the numbers are a wall of text nobody reads, and the chase
+    #: sheet is the better answer.
+    inline_list_threshold: int = 10
+    #: Attach the short "still open" workbook: only open lines, only the
+    #: columns needed to chase them, oldest first.
+    attach_open_summary: bool = True
+    #: Also attach PortGround's original 17-column export as the audit trail.
+    attach_full_workbook: bool = True
 
     # --- storage ---
     database_path: Path = Path("data/lej_cc.sqlite3")

@@ -35,6 +35,7 @@ class ShipmentRow:
     clearance_time: datetime | None = None
     check_in: datetime | None = None
     declaration_sent: datetime | None = None
+    notification_customs_office: datetime | None = None
     invoice_number: str | None = None
     mrn_id: str | None = None
     items: int = 0

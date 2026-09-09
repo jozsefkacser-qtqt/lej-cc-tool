@@ -93,7 +93,12 @@ def test_first_poll_posts_to_channel_and_attaches_the_file(settings, store, data
     post = notifier.posts[0]
     assert post["thread_ts"] is None  # goes to the channel, becomes the thread root
     assert "60% cleared" in post["text"]
-    assert len(notifier.uploads) == 1
+
+    # Two attachments: the short chase sheet first, then the full export.
+    names = [u["filename"] for u in notifier.uploads]
+    assert len(names) == 2
+    assert names[0].startswith("OPEN_488-20744846_4_shipments")
+    assert names[1].startswith("shipment_status_")
 
     reloaded = store.get(job.id)
     assert reloaded.state == "active"
@@ -149,7 +154,12 @@ def test_completion_finishes_the_job_and_broadcasts(settings, store, data_dir):
     done = store.get(job.id)
     assert done.state == "complete"
     assert done.finish_reason == "100% cleared"
-    assert len(notifier.uploads) == 2  # first poll and completion
+
+    # First poll: chase sheet + full export. Completion: full export only,
+    # because with nothing open a chase sheet would be an empty file.
+    names = [u["filename"] for u in notifier.uploads]
+    assert len(names) == 3
+    assert sum(1 for n in names if n.startswith("OPEN_")) == 1
 
 
 def test_snapshot_history_is_recorded(settings, store, data_dir):
@@ -287,3 +297,56 @@ def test_claim_lease_outlasts_the_slowest_poll(tmp_path):
     lease = inspect.signature(JobStore.claim_due).parameters["lease_seconds"].default
     worst_case_poll = settings.http_timeout_seconds * 2  # two attempts
     assert lease > worst_case_poll
+
+
+def test_chase_sheet_holds_only_open_rows_and_only_useful_columns(settings, store, data_dir):
+    """The point of the sheet: 17 columns of everything becomes a work list."""
+    import openpyxl
+
+    from lej_cc.report import COLUMNS
+
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+
+    sheet_path = next(p for p in settings.download_dir.glob("open_*.xlsx"))
+    sheet = openpyxl.load_workbook(sheet_path).active
+
+    assert [c.value for c in sheet[1]] == [header for header, _, _ in COLUMNS]
+    assert sheet.max_row == 5  # header + the 4 open shipments, not all 10
+    assert sheet.max_column == len(COLUMNS) < 17
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref is not None
+
+
+def test_no_chase_sheet_when_nothing_is_open(settings, store, data_dir):
+    tracker, notifier = build(settings, store, [data_dir / "all_cleared.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert not any(n["filename"].startswith("OPEN_") for n in notifier.uploads)
+
+
+def test_full_export_can_be_switched_off(settings, store, data_dir):
+    settings.attach_full_workbook = False
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert [u["filename"].startswith("OPEN_") for u in notifier.uploads] == [True]
+
+
+def test_long_open_lists_are_not_named_inline(settings, store, data_dir):
+    """1578 shipments taught us: past a handful, names are noise."""
+    tracker, notifier = build(settings, store, [data_dir / "none_cleared.xlsx"])
+    tracker.run_once(store.create_job("93600333955", "C1", "U1"))
+
+    rendered = str(notifier.posts[0]["blocks"])
+    assert "12 shipments still open" in rendered
+    assert "0034043" not in rendered  # no tracking numbers in the message
+
+
+def test_short_open_lists_are_still_named_inline(settings, store, data_dir):
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    rendered = str(notifier.posts[0]["blocks"])
+    assert "0034043" in rendered  # only 4 open, so naming them helps

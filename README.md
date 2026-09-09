@@ -53,6 +53,24 @@ at 10:15 stay 15 minutes apart. See `src/lej_cc/scheduler.py`.
 
 Buttons on each status card: **Refresh now**, **Stop tracking**.
 
+## Attachments
+
+Each update carries two files:
+
+| File | What it is |
+|---|---|
+| `OPEN_488-20744846_34_shipments.xlsx` | **The chase sheet.** Only shipments still open, only the columns needed to chase them, oldest first, with a filter row and frozen header. |
+| `shipment_status_….xlsx` | PortGround's original 17-column export, unmodified, as the audit trail. |
+
+On a real master AWB that is 34 rows x 10 columns instead of 1578 x 17.
+Set `ATTACH_FULL_WORKBOOK=false` to keep only the short one.
+
+The columns of the chase sheet are defined by `COLUMNS` in
+`src/lej_cc/report.py` -- that list is the whole definition of the report.
+`Days open` is computed from the earliest timestamp a shipment has, and
+rows with no timestamps at all sort last, since nothing has happened to
+them yet.
+
 ## AWB numbers
 
 Input is normalised to the bare 11 digits PortGround expects, so
@@ -179,6 +197,7 @@ The PortGround key is a bearer credential passed in a URL query string.
 | `src/lej_cc/store.py` | SQLite jobs + snapshot history |
 | `src/lej_cc/scheduler.py` | Tick loop, parallel polling |
 | `src/lej_cc/tracker.py` | One polling cycle, error policy |
+| `src/lej_cc/report.py` | The short "still open" chase sheet |
 | `src/lej_cc/formatting.py` | Block Kit messages |
 | `src/lej_cc/slack_app.py` | Commands, buttons, mentions |
 | `src/lej_cc/cli.py` | One-shot check, no Slack |

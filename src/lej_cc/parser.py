@@ -234,6 +234,9 @@ def parse_workbook(
                     clearance_time=_parse_dt(cell(row, "Clearance Time")),
                     check_in=_parse_dt(cell(row, "Check-In")),
                     declaration_sent=_parse_dt(cell(row, "Declaration Sent")),
+                    notification_customs_office=_parse_dt(
+                        cell(row, "Notification Customs Office")
+                    ),
                     invoice_number=_clean(cell(row, "Invoice Number")),
                     mrn_id=_clean(cell(row, "MRN-ID")),
                     items=_parse_int(cell(row, "Number of items")),

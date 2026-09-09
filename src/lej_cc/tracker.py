@@ -18,6 +18,10 @@ from .errors import LejCcError
 from .model import Snapshot, diff_snapshots
 from .parser import StatusMapper, parse_workbook
 from .portground import PortGroundClient
+from .report import (
+    build_open_shipments_workbook,
+    open_shipments_filename,
+)
 from .store import Job, JobStore, utcnow
 
 log = logging.getLogger(__name__)
@@ -156,7 +160,7 @@ class Tracker:
             diff=diff,
             next_run_at=next_run_at,
             requested_by=job.requested_by,
-            max_listed=settings.max_listed_hawbs,
+            inline_threshold=settings.inline_list_threshold,
             is_final=is_final,
             poll_count=job.poll_count + 1,
         )
@@ -186,14 +190,37 @@ class Tracker:
                 broadcast=is_final,
             )
 
-        if self._should_attach(job, changed=changed, is_final=is_final):
+        if not self._should_attach(job, changed=changed, is_final=is_final):
+            return
+
+        # The chase sheet goes first: it is the one people actually open.
+        if settings.attach_open_summary:
+            self._upload_chase_sheet(job, snapshot)
+
+        if settings.attach_full_workbook:
             self.notifier.upload(
                 job.channel_id,
                 path,
                 filename=snapshot.source_filename or path.name,
-                title=f"{format_display(job.mawb)} — {snapshot.percent:.0f}% cleared",
+                title=f"{format_display(job.mawb)} — full export from PortGround",
                 thread_ts=job.thread_ts,
             )
+
+    def _upload_chase_sheet(self, job: Job, snapshot: Snapshot) -> None:
+        try:
+            sheet = build_open_shipments_workbook(snapshot, self.settings.download_dir)
+        except Exception:  # noqa: BLE001 - a report bug must not lose the update
+            log.exception("could not build the chase sheet for %s", job.mawb)
+            return
+        if sheet is None:
+            return  # nothing open: the full export says everything there is
+        self.notifier.upload(
+            job.channel_id,
+            sheet,
+            filename=open_shipments_filename(snapshot),
+            title=f"{format_display(job.mawb)} — {len(snapshot.open_rows):,} still open",
+            thread_ts=job.thread_ts,
+        )
 
     def _should_attach(self, job: Job, *, changed: bool, is_final: bool) -> bool:
         if job.is_first_poll or is_final:
