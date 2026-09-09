@@ -15,6 +15,7 @@ you to administer it.
 | **A machine you already own** — office server, always-on PC, Synology NAS with Docker | Free | Your building | Best if you have one. Data never leaves the network. |
 | **Oracle Cloud Always Free** | Free indefinitely | **Frankfurt / Amsterdam** | Recommended cloud option. EU region matters here — see *Data protection*. |
 | **Google Cloud Always Free** (e2-micro) | Free indefinitely | US only | Works, but puts consignee data on a US server. |
+| **Ubuntu under WSL2 on a Windows PC** | Free | Your desk | Fine for testing today; stops whenever Windows sleeps or restarts — see below. |
 
 If you have your own machine, skip to [Install](#install) — the steps are
 the same once you have a Linux box with a shell.
@@ -26,6 +27,98 @@ consumer parcels. Keep them in the EU or on your own hardware, and keep
 `DOWNLOAD_RETENTION_DAYS` set (the bot deletes downloads older than that
 automatically). This is the reason Oracle Frankfurt is recommended over
 Google's free tier, which is US-only.
+
+---
+
+## Already have Ubuntu on Windows (WSL2)?
+
+Then you can run the bot today, without signing up for anything. But know
+what you are getting:
+
+**WSL2 on a desktop is a good test host and a poor 24/7 host.**
+
+| | |
+|---|---|
+| Windows sleeps or hibernates | WSL stops; no polls, no Slack updates |
+| Windows restarts (including Windows Update) | WSL does **not** start again on its own |
+| You open a WSL terminal | WSL starts |
+
+The bot itself recovers cleanly — the schedule is in SQLite, so every
+tracked AWB resumes on its own clock. But an AWB tracked at 17:00 gets no
+updates overnight if the PC sleeps, and picks up again only when someone
+opens a terminal. For daytime customs work that may be perfectly
+acceptable; just decide it deliberately rather than discovering it.
+
+The recommendation: **use WSL to prove it works today, move to an
+always-on host once you are happy with it.**
+
+WSL's NAT networking, normally the awkward part of hosting anything under
+WSL, is a non-issue here — the bot accepts no inbound connections.
+
+### Fastest path — no Docker, about five minutes
+
+```bash
+sudo apt update && sudo apt install -y python3-venv git
+
+# Clone into the WSL filesystem, NOT /mnt/c — much faster, no permission oddities
+git clone -b claude/awb-tracking-slack-bot-noy6d8 \
+    https://github.com/jozsefkacser-qtqt/lej-cc-tool.git ~/lej-cc-tool
+cd ~/lej-cc-tool
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+cp .env.example .env
+nano .env          # paste the three secrets, Ctrl-O, Enter, Ctrl-X
+chmod 600 .env
+
+lej-cc-doctor      # checks everything, including a live PortGround download
+lej-cc             # start the bot; Ctrl-C stops it
+```
+
+Then in Slack: `/awb 488-20744846`.
+
+While `lej-cc` is running in that terminal the bot is live. Close the
+terminal and it stops — which is exactly what you want while testing.
+
+### If you decide to keep it on this PC
+
+Three things to change:
+
+1. **Enable systemd in WSL** so the service can run in the background.
+   Create `/etc/wsl.conf`:
+
+   ```ini
+   [boot]
+   systemd=true
+   ```
+
+   Then in PowerShell: `wsl --shutdown`, and reopen Ubuntu.
+
+2. **Install the service** — follow [Without Docker](#without-docker)
+   below, using `~/lej-cc-tool` as the path.
+
+3. **Start WSL when Windows starts.** WSL does not do this by itself.
+   In Task Scheduler, create a task that runs at logon:
+
+   ```
+   Program:   wsl.exe
+   Arguments: -d Ubuntu -u root systemctl start lej-cc-tool
+   ```
+
+   And set the Windows power plan so the machine never sleeps.
+
+Even then it is only as reliable as the PC. If clearance status genuinely
+needs watching overnight, use the Oracle VM.
+
+### A note on Docker under WSL
+
+If you want Docker here, install **Docker Engine inside WSL**
+(`curl -fsSL https://get.docker.com | sudo sh`) rather than Docker Desktop.
+Docker Desktop needs a paid business licence above 250 employees or $10M
+revenue; Docker Engine is free regardless. Engine inside WSL needs systemd
+enabled as above.
 
 ---
 

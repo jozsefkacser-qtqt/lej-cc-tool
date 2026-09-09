@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from lej_cc.errors import AwbNotFound, MawbMismatch, SchemaDrift, UnexpectedPayload
@@ -105,3 +107,24 @@ def test_status_map_is_found_from_the_working_directory(tmp_path, monkeypatch):
 def test_missing_configured_status_map_is_an_error_not_a_silent_default(tmp_path):
     with pytest.raises(SchemaDrift):
         StatusMapper.load(tmp_path / "nope.yaml")
+
+
+def test_timezone_resolves_without_a_system_tz_database():
+    """LOCAL_TZ is resolved at import time, and Debian slim images ship no
+    /usr/share/zoneinfo — so a missing tz database crashes the container on
+    startup rather than failing later. The tzdata package guards against it;
+    PYTHONTZPATH="" simulates the stripped image."""
+    import os
+    import subprocess
+    import sys
+
+    import lej_cc
+
+    src_dir = str(Path(lej_cc.__file__).resolve().parents[1])
+    result = subprocess.run(
+        [sys.executable, "-c", "import lej_cc.parser, lej_cc.formatting; print('ok')"],
+        env={**os.environ, "PYTHONTZPATH": "", "PYTHONPATH": src_dir},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"import failed without a system tzdb:\n{result.stderr}"

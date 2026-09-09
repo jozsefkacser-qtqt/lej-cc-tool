@@ -12,6 +12,9 @@ dependencies = [
     "pydantic-settings>=2.6",
     "PyYAML>=6.0",
     "tenacity>=9.0",
+    # Europe/Berlin is resolved at import time and slim base images ship no
+    # system tz database, so carry our own copy rather than depend on the host.
+    "tzdata>=2024.2",
 ]
 
 [project.optional-dependencies]
