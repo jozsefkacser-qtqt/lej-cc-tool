@@ -271,9 +271,9 @@ sudo docker compose run --rm lej-cc-tool lej-cc-doctor
 lej-cc-tool preflight
 
 [  ok  ] configuration    .env loaded
-[  ok  ] slack bot token  xoxb-901… (57 chars)
-[  ok  ] slack app token  xapp-1-A… (91 chars)
-[  ok  ] portground key   BJuvNOZ0… (64 chars)
+[  ok  ] slack bot token  xoxb-abc… (57 chars)
+[  ok  ] slack app token  xapp-1-X… (91 chars)
+[  ok  ] portground key   A1b2C3d4… (64 chars)
 [  ok  ] database dir     data is writable
 [  ok  ] download dir     data/downloads is writable
 [  ok  ] status map       'cleared' and 'not cleared' map correctly

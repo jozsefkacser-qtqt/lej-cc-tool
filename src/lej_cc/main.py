@@ -9,7 +9,7 @@ import sys
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 
-from .config import Settings
+from .config import Settings, configure_logging
 from .parser import StatusMapper
 from .portground import PortGroundClient
 from .scheduler import PollScheduler
@@ -21,10 +21,7 @@ from .tracker import Tracker
 
 def main() -> int:
     settings = Settings()  # type: ignore[call-arg]
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)-7s %(name)-20s %(message)s",
-    )
+    configure_logging(settings.log_level)
     log = logging.getLogger("lej_cc")
 
     store = JobStore(settings.database_path)

@@ -9,12 +9,11 @@ reach PortGround, and for confirming a status mapping before deploying.
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
 from .awb import format_display, normalize
-from .config import Settings
+from .config import Settings, configure_logging
 from .errors import LejCcError
 from .formatting import progress_bar
 from .parser import StatusMapper, parse_workbook
@@ -29,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
+    configure_logging("DEBUG" if args.verbose else "WARNING")
 
     try:
         mawb = normalize(args.mawb)

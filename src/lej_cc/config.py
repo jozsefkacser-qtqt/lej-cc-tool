@@ -7,6 +7,7 @@ every log line (see `redact`).
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -83,9 +84,54 @@ class Settings(BaseSettings):
         return text.replace(self.portground_api_key, "***")
 
 
-_KEY_IN_URL = re.compile(r"(apiKey=)[^&\s]+")
+_SECRET_PATTERNS = (
+    # The PortGround key travels in the query string, so any library that
+    # logs a request URL logs the credential with it.
+    re.compile(r"(apiKey=)[^&\s\"\']+"),
+    # Slack tokens, in case a client ever echoes one into an error.
+    re.compile(r"\b(xox[baprs]-)[A-Za-z0-9-]+"),
+    re.compile(r"\b(xapp-)[A-Za-z0-9-]+"),
+)
 
 
 def scrub(text: str) -> str:
-    """Redact an apiKey query parameter regardless of its value."""
-    return _KEY_IN_URL.sub(r"\1***", text)
+    """Redact credentials from anything heading for a log or a message."""
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(r"\1***", text)
+    return text
+
+
+class RedactingFilter(logging.Filter):
+    """Scrubs secrets out of every log record, whoever emitted it.
+
+    httpx logs the full request URL at INFO, which for this API means the
+    key. Filtering centrally is the only version of this that stays true as
+    dependencies change -- scrubbing at each call site does not.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - never lose a line to a format error
+            return True
+        cleaned = scrub(message)
+        if cleaned != message:
+            record.msg = cleaned
+            record.args = ()
+        return True
+
+
+def configure_logging(level: str = "INFO") -> None:
+    """Set up logging with credential redaction on every handler."""
+    logging.basicConfig(
+        level=level.upper(),
+        format="%(asctime)s %(levelname)-7s %(name)-20s %(message)s",
+    )
+    redactor = RedactingFilter()
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(redactor)
+
+    # Quiet the request-level chatter: the useful line is our own, which
+    # reports size and duration without the URL.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
