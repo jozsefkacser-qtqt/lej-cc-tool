@@ -123,8 +123,14 @@ class Snapshot:
 
     @property
     def last_clearance(self) -> datetime | None:
+        """When the final shipment cleared -- i.e. when this AWB finished."""
         stamps = [r.clearance_time for r in self.rows if r.clearance_time]
         return max(stamps) if stamps else None
+
+    @property
+    def first_clearance(self) -> datetime | None:
+        stamps = [r.clearance_time for r in self.rows if r.clearance_time]
+        return min(stamps) if stamps else None
 
 
 @dataclass

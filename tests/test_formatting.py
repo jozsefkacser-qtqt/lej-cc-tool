@@ -63,3 +63,45 @@ def test_open_count_includes_unrecognised_statuses():
     blocks = build_status_blocks(Snapshot(mawb="93602927993", rows=rows))
     fields = next(b for b in blocks if b.get("fields"))["fields"]
     assert "*⏳ Open*\n2" in [f["text"] for f in fields]
+
+
+def test_finished_awb_says_when_it_finished():
+    """Looking up an old AWB, "cleared" answers the wrong question. The
+    useful answer is cleared, on this date, this long ago."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Europe/Berlin")
+    cleared_at = datetime(2026, 5, 20, 14, 38, tzinfo=tz)
+    now = datetime(2026, 9, 9, 13, 24, tzinfo=tz)
+
+    rows = [
+        ShipmentRow(
+            hawb=f"h{i}",
+            mawb="48820744846",
+            status=ClearanceStatus.CLEARED,
+            clearance_time=cleared_at - timedelta(hours=i),
+            items=1,
+        )
+        for i in range(3)
+    ]
+    snapshot = Snapshot(mawb="48820744846", rows=rows, fetched_at=now)
+
+    blocks = build_status_blocks(snapshot, is_final=True)
+    rendered = str(blocks)
+    assert "20 May 2026 14:38" in rendered
+    assert "111d" in rendered and "ago" in rendered  # finished this long ago
+    assert "cleared over 2h" in rendered  # first to last clearance
+
+
+def test_in_flight_awb_shows_tracking_time_not_a_finish_stamp():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Europe/Berlin")
+    now = datetime(2026, 9, 9, 13, 24, tzinfo=tz)
+    snapshot = snap(5, 10)
+    snapshot.fetched_at = now
+
+    rendered = str(build_status_blocks(snapshot, tracking_since=now - timedelta(hours=2)))
+    assert "Tracking" in rendered and "🏁" not in rendered

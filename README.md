@@ -34,6 +34,21 @@ The bar is coloured by state -- green above 95%, amber above 50%, red below
 -- and only a genuine 100% fills it. 97.8% rounding up to ten green cells
 would say "finished" about an AWB with 34 shipments still stuck.
 
+Looking up an AWB that finished long ago answers the question people are
+actually asking -- *is this the one from May?* -- rather than just "cleared":
+
+```
+✅ 488-20744846 — cleared
+🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩  100.0%
+
+✅ Cleared 225 of 225        🏁 Finished 20 May 2026 14:38
+📦 Items 2,480 of 2,480      ⏱ 111d 22h ago · cleared over 5h 09m
+
+📄 data 15:05 · check #1 · by @colleague
+```
+
+…with PortGround's export attached to the channel beneath it.
+
 ## How it works
 
 ```

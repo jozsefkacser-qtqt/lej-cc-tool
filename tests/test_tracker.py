@@ -369,3 +369,25 @@ def test_ongoing_updates_keep_their_files_in_the_thread(settings, store, data_di
     tracker.run_once(store.create_job(MAWB, "C1", "U1"))
 
     assert all(u["thread_ts"] is not None for u in notifier.uploads)
+
+
+def test_a_failed_upload_is_announced_not_swallowed(settings, store, data_dir):
+    """A completed card with no file and no explanation is what a colleague
+    reported seeing. Slack failures must reach the channel."""
+    from pathlib import Path
+
+    class BrokenUpload(FakeNotifier):
+        def upload(self, channel, path, *, filename, title, thread_ts=None, comment=None):
+            self.post(
+                channel,
+                text=f":warning: Couldn't attach `{filename}` (Slack said `file_upload_error`).",
+                thread_ts=thread_ts,
+            )
+
+    tracker, notifier = build(
+        settings, store, [data_dir / "all_cleared.xlsx"], notifier=BrokenUpload()
+    )
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert any("Couldn't attach" in p["text"] for p in notifier.posts)
+    assert isinstance(Path(settings.download_dir), Path)

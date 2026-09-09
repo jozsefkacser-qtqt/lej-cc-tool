@@ -58,4 +58,22 @@ class SlackNotifier:
                 initial_comment=comment,
             )
         except SlackApiError as exc:
-            log.error("files.upload failed for %s: %s", filename, exc.response.get("error"))
+            error = exc.response.get("error", "unknown")
+            log.error("files.upload failed for %s: %s", filename, error)
+            # Never fail quietly: a status card with no attachment and no
+            # explanation is indistinguishable from one that never had a file.
+            self.post(
+                channel,
+                text=(
+                    f":warning: Couldn't attach `{filename}` (Slack said `{error}`). "
+                    "The status above is correct; only the file is missing."
+                ),
+                thread_ts=thread_ts,
+            )
+        except OSError as exc:
+            log.error("could not read %s for upload: %s", path, exc)
+            self.post(
+                channel,
+                text=f":warning: Couldn't attach `{filename}`: {exc}",
+                thread_ts=thread_ts,
+            )

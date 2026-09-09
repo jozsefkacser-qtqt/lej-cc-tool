@@ -63,6 +63,28 @@ def _duration(delta: timedelta) -> str:
     return f"{days}d {hours}h"
 
 
+def _stamp(value: datetime) -> str:
+    return value.astimezone(LOCAL_TZ).strftime("%d %b %Y %H:%M")
+
+
+def _completion_note(snapshot: Snapshot, reference: datetime) -> str:
+    """How long ago it finished, and how long it took.
+
+    Someone looking up a finished AWB is usually asking "is this the one from
+    May?" -- an age answers that; the word "cleared" on its own does not.
+    """
+    last = snapshot.last_clearance
+    assert last is not None
+    age = reference - last
+    when = "just now" if age < timedelta(minutes=2) else f"{_duration(age)} ago"
+
+    note = f"⏱ {when}"
+    first = snapshot.first_clearance
+    if first and last > first:
+        note += f" · cleared over {_duration(last - first)}"
+    return note
+
+
 def _open_section(hawbs: list[str], threshold: int) -> str:
     """Name the open shipments only while naming them is useful.
 
@@ -135,12 +157,29 @@ def build_status_blocks(
             ),
         },
     ]
-    if tracking_since:
-        reference = snapshot.fetched_at or datetime.now(LOCAL_TZ)
+    reference = snapshot.fetched_at or datetime.now(LOCAL_TZ)
+    if done and snapshot.last_clearance:
+        fields.append(
+            {
+                "type": "mrkdwn",
+                "text": f"*🏁 Finished*\n{_stamp(snapshot.last_clearance)}",
+            }
+        )
+    elif tracking_since:
         fields.append(
             {"type": "mrkdwn", "text": f"*⏱ Tracking*\n{_duration(reference - tracking_since)}"}
         )
     blocks.append({"type": "section", "fields": fields})
+
+    if done and snapshot.last_clearance:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": _completion_note(snapshot, reference)}
+                ],
+            }
+        )
 
     if snapshot.other:
         unknown = ", ".join(f"`{k}` ×{v:,}" for k, v in sorted(snapshot.unknown_statuses.items()))
