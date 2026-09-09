@@ -73,3 +73,49 @@ def test_status_map_round_trips(tmp_path):
     job = store.create_job("48820744846", "C1", "U1")
     store.reschedule(job.id, utcnow(), status_map={"a": "cleared"})
     assert store.get(job.id).last_status_map == {"a": "cleared"}
+
+
+def test_leases_are_released_on_restart(tmp_path):
+    """A crash mid-poll must not make a job untouchable for the lease window."""
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.create_job("48820744846", "C1", "U1")
+    assert len(store.claim_due()) == 1
+    assert store.claim_due() == []  # leased
+
+    restarted = JobStore(tmp_path / "jobs.sqlite3")  # simulate the crash + restart
+    assert restarted.recover_leases() == 1
+    assert len(restarted.claim_due()) == 1
+
+
+def test_recover_leases_is_a_no_op_when_nothing_is_leased(tmp_path):
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.create_job("48820744846", "C1", "U1")
+    assert store.recover_leases() == 0
+
+
+def test_concurrent_reads_and_writes_do_not_corrupt_the_store(tmp_path):
+    """Poll threads read and write the same connection at the same time."""
+    import threading
+
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    jobs = [store.create_job(m, "C1", "U1") for m in ("48820744846", "93600333955")]
+    errors: list[Exception] = []
+
+    def hammer(job) -> None:
+        try:
+            for _ in range(50):
+                store.get(job.id)
+                store.find_active(job.mawb, "C1")
+                store.list_active("C1")
+                store.reschedule(job.id, utcnow(), percent=50.0, increment_poll=False)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=hammer, args=(j,)) for j in jobs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert len(store.list_active()) == 2

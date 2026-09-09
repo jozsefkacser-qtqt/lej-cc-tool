@@ -133,7 +133,12 @@ class JobStore:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        # One connection shared by the poll threads, so every statement is
+        # serialised through this lock. sqlite3's own threadsafety level
+        # varies by build, and "usually fine" is not a concurrency model.
+        # Reentrant because some methods legitimately call others that lock
+        # (create_job reads back the row it just inserted).
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -168,14 +173,16 @@ class JobStore:
             return self.get(cur.lastrowid)  # type: ignore[arg-type]
 
     def get(self, job_id: int) -> Job | None:
-        row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return Job.from_row(row) if row else None
 
     def find_active(self, mawb: str, channel_id: str) -> Job | None:
-        row = self._conn.execute(
-            "SELECT * FROM jobs WHERE mawb = ? AND channel_id = ? AND state = 'active'",
-            (mawb, channel_id),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE mawb = ? AND channel_id = ? AND state = 'active'",
+                (mawb, channel_id),
+            ).fetchone()
         return Job.from_row(row) if row else None
 
     def list_active(self, channel_id: str | None = None) -> list[Job]:
@@ -185,7 +192,26 @@ class JobStore:
             sql += " AND channel_id = ?"
             params = (channel_id,)
         sql += " ORDER BY created_at"
-        return [Job.from_row(r) for r in self._conn.execute(sql, params)]
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [Job.from_row(r) for r in rows]
+
+    def recover_leases(self) -> int:
+        """Clear leases left behind by a crash. Returns how many were freed.
+
+        A lease outlives the slowest poll by design, so a process killed
+        mid-poll would otherwise leave its jobs untouchable for half an hour
+        after the restart -- exactly when they most need picking up.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET leased_until = NULL"
+                " WHERE state = 'active' AND leased_until IS NOT NULL"
+            )
+            freed = cursor.rowcount or 0
+        if freed:
+            log.info("released %d lease(s) left by a previous run", freed)
+        return freed
 
     # --- scheduling -----------------------------------------------------
 

@@ -8,6 +8,10 @@ import sys
 
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
+from slack_sdk.http_retry.builtin_handlers import (
+    ConnectionErrorRetryHandler,
+    RateLimitErrorRetryHandler,
+)
 
 from .config import Settings, configure_logging
 from .parser import StatusMapper
@@ -26,7 +30,17 @@ def main() -> int:
 
     store = JobStore(settings.database_path)
     client = PortGroundClient(settings)
-    notifier = SlackNotifier(WebClient(token=settings.slack_bot_token))
+    # Slack rate-limits chat.postMessage to roughly one per second per
+    # channel. Several AWBs completing at once would otherwise drop updates.
+    notifier = SlackNotifier(
+        WebClient(
+            token=settings.slack_bot_token,
+            retry_handlers=[
+                ConnectionErrorRetryHandler(max_retry_count=2),
+                RateLimitErrorRetryHandler(max_retry_count=3),
+            ],
+        )
+    )
     mapper = StatusMapper.load(settings.status_map_path)
     tracker = Tracker(settings, store, client, notifier, mapper)
     scheduler = PollScheduler(store, tracker)
@@ -34,6 +48,7 @@ def main() -> int:
     app = build_app(settings, store, scheduler)
     handler = SocketModeHandler(app, settings.slack_app_token)
 
+    store.recover_leases()
     scheduler.start()
     active = store.list_active()
     if active:

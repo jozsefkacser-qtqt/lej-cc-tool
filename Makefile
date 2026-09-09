@@ -7,10 +7,10 @@ dev:
 	pip install -e ".[dev]"
 
 test:
-	PYTHONPATH=src pytest -q
+	PYTHONPATH=src python -m pytest -q
 
 lint:
-	ruff check src tests && mypy src
+	python -m ruff check src tests && python -m mypy src
 
 fmt:
 	ruff format src tests && ruff check --fix src tests
