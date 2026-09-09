@@ -114,6 +114,35 @@ def check_status_map(settings) -> Result:  # noqa: ANN001
     return Result("status map", OK, "'cleared' and 'not cleared' map correctly")
 
 
+def check_email(settings) -> Result:  # noqa: ANN001
+    """Connect and authenticate without sending anything."""
+    import smtplib
+
+    if not settings.email_enabled:
+        return Result("email", OK, "not configured (SMTP_HOST empty) — Slack only")
+
+    recipients = settings.email_always_recipients
+    detail = f"{settings.smtp_host}:{settings.smtp_port} as {settings.email_from}"
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+            if settings.smtp_starttls:
+                smtp.starttls()
+            if settings.smtp_user:
+                smtp.login(settings.smtp_user, settings.smtp_password)
+    except smtplib.SMTPAuthenticationError:
+        return Result(
+            "email",
+            FAIL,
+            f"{detail} — authentication rejected. With Google Workspace this "
+            "needs an app password, not the account password.",
+        )
+    except Exception as exc:  # noqa: BLE001 - network, DNS, TLS
+        return Result("email", FAIL, f"{detail} — {exc}")
+
+    always = f", always-to {', '.join(recipients)}" if recipients else ", no standing recipients"
+    return Result("email", OK, f"{detail}{always}")
+
+
 def check_slack(settings) -> Result:  # noqa: ANN001
     from slack_sdk import WebClient
     from slack_sdk.errors import SlackApiError
@@ -193,6 +222,7 @@ def run(mawb: str = SAMPLE_MAWB, *, offline: bool = False) -> list[Result]:
         return results
 
     results.append(check_slack(settings))
+    results.append(check_email(settings))
     results.append(check_portground(settings, mawb))
     return results
 

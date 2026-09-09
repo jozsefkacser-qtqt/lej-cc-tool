@@ -57,6 +57,30 @@ class Settings(BaseSettings):
     #: Also attach PortGround's original 17-column export as the audit trail.
     attach_full_workbook: bool = True
 
+    # --- email notifications (optional) ---
+    #: Leave smtp_host empty to disable email entirely.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    #: The From address. Workspace requires this to be an address the
+    #: authenticated account is allowed to send as.
+    email_from: str = ""
+    #: Addresses that receive every AWB, whoever started it. Comma-separated.
+    email_always_to: str = ""
+    #: Email is more intrusive than Slack, so unchanged polls never mail.
+    #: This controls whether *changed* polls do, beyond first and final.
+    email_on_change: bool = True
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host and self.email_from)
+
+    @property
+    def email_always_recipients(self) -> list[str]:
+        return [a.strip() for a in self.email_always_to.split(",") if a.strip()]
+
     # --- storage ---
     database_path: Path = Path("data/lej_cc.sqlite3")
     download_dir: Path = Path("data/downloads")

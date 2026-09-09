@@ -391,3 +391,112 @@ def test_a_failed_upload_is_announced_not_swallowed(settings, store, data_dir):
 
     assert any("Couldn't attach" in p["text"] for p in notifier.posts)
     assert isinstance(Path(settings.download_dir), Path)
+
+
+class FakeEmail:
+    """Stands in for EmailNotifier at the tracker boundary."""
+
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.updates: list[dict] = []
+        self.errors: list[str] = []
+        self._n = 0
+
+    def send_update(self, job, snapshot, *, diff=None, next_run_at=None,
+                    is_final=False, attachments=None):
+        self._n += 1
+        self.updates.append(
+            {
+                "percent": snapshot.percent,
+                "is_final": is_final,
+                "attachments": [p.name for p in (attachments or [])],
+                "threaded": job.email_message_id,
+            }
+        )
+        return f"<msg{self._n}@test>"
+
+    def send_error(self, job, text, *, fatal):
+        self.errors.append(text)
+
+
+def build_with_email(settings, store, responses, email=None):
+    notifier = FakeNotifier()
+    email = email or FakeEmail()
+    tracker = Tracker(
+        settings, store, FakeClient(responses), notifier, email=email
+    )
+    return tracker, notifier, email
+
+
+def test_first_poll_always_emails(settings, store, data_dir):
+    tracker, _, email = build_with_email(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert len(email.updates) == 1
+    assert email.updates[0]["percent"] == 60.0
+
+
+def test_unchanged_polls_never_email(settings, store, data_dir):
+    """The rule that decides whether a notifier gets filtered into a folder."""
+    tracker, _, email = build_with_email(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "partial.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+
+    tracker.run_once(job)
+    tracker.run_once(store.get(job.id))  # identical content
+    tracker.run_once(store.get(job.id))
+
+    assert len(email.updates) == 1  # only the first
+
+
+def test_change_and_completion_email(settings, store, data_dir):
+    tracker, _, email = build_with_email(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "all_cleared.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    tracker.run_once(store.get(job.id))
+
+    assert [u["is_final"] for u in email.updates] == [False, True]
+    assert email.updates[-1]["percent"] == 100.0
+
+
+def test_email_carries_both_workbooks(settings, store, data_dir):
+    tracker, _, email = build_with_email(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    attached = email.updates[0]["attachments"]
+    assert any(n.startswith("open_") for n in attached)
+    assert any(n.endswith(".xlsx") and not n.startswith("open_") for n in attached)
+
+
+def test_the_first_message_id_is_persisted_for_threading(settings, store, data_dir):
+    tracker, _, email = build_with_email(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "all_cleared.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+
+    tracker.run_once(job)
+    stored = store.get(job.id).email_message_id
+    assert stored == "<msg1@test>"
+
+    tracker.run_once(store.get(job.id))
+    assert email.updates[1]["threaded"] == stored  # second mail references the first
+
+
+def test_errors_reach_email_too(settings, store, data_dir):
+    tracker, _, email = build_with_email(settings, store, [data_dir / "empty.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert email.errors and "no shipments on file" in email.errors[0].lower()
+
+
+def test_slack_still_works_with_email_switched_off(settings, store, data_dir):
+    tracker, notifier, email = build_with_email(
+        settings, store, [data_dir / "partial.xlsx"], email=FakeEmail(enabled=False)
+    )
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert len(notifier.posts) == 1
+    assert email.updates == []

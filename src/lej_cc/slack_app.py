@@ -8,6 +8,7 @@ network.
 from __future__ import annotations
 
 import logging
+import re
 
 from slack_bolt import Ack, App, Respond
 from slack_sdk import WebClient
@@ -20,9 +21,15 @@ from .store import JobStore, utcnow
 
 log = logging.getLogger(__name__)
 
+#: Anything in the command that looks like an address is a recipient, so
+#: `/awb 488-20744846 candy@example.com` tracks it and mails her the updates.
+EMAIL_RE = re.compile(r"[^\s<>,;]+@[^\s<>,;]+\.[A-Za-z]{2,}")
+
+
 HELP = (
     "*AWB customs-clearance tracking*\n"
     "• `/awb 488-20744846` — start tracking (several numbers at once are fine)\n"
+    "• `/awb 488-20744846 name@qtlogistics.eu` — and email the updates there\n"
     "• `/awb list` — what is currently being tracked in this channel\n"
     "• `/awb stop 488-20744846` — stop tracking\n"
     "• `/awb help` — this message\n\n"
@@ -34,7 +41,9 @@ HELP = (
 def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> App:
     app = App(token=settings.slack_bot_token, logger=log)
 
-    def start_tracking(mawb: str, channel: str, user: str | None) -> str:
+    def start_tracking(
+        mawb: str, channel: str, user: str | None, email_to: str | None = None
+    ) -> str:
         existing = store.find_active(mawb, channel)
         if existing:
             percent = existing.last_percent
@@ -43,17 +52,23 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
                 f"⏳ `{format_display(mawb)}` is already being tracked here "
                 f"({state}, check #{existing.poll_count})."
             )
-        job = store.create_job(mawb, channel, user, run_at=utcnow())
+        job = store.create_job(mawb, channel, user, run_at=utcnow(), email_to=email_to)
         if job is None:  # lost a race against a duplicate command
             return f"⏳ `{format_display(mawb)}` is already being tracked here."
         log.info("tracking %s in %s for %s (job %s)", mawb, channel, user, job.id)
+        mailed = f" Updates also go to {email_to}." if email_to else ""
         return (
             f"🔎 Tracking `{format_display(mawb)}` — first check running now. "
             "PortGround takes a couple of minutes to build the export, so the "
-            "first status will follow shortly."
+            f"first status will follow shortly.{mailed}"
         )
 
-    def handle_numbers(raw_numbers: list[str], channel: str, user: str | None) -> str:
+    def handle_numbers(
+        raw_numbers: list[str],
+        channel: str,
+        user: str | None,
+        email_to: str | None = None,
+    ) -> str:
         replies: list[str] = []
         for raw in raw_numbers:
             try:
@@ -64,7 +79,7 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             except InvalidAwbFormat as exc:
                 replies.append(f"🚫 {exc.user_message}")
                 continue
-            replies.append(start_tracking(mawb, channel, user))
+            replies.append(start_tracking(mawb, channel, user, email_to))
         return "\n".join(replies)
 
     # --- /awb ------------------------------------------------------------
@@ -105,7 +120,13 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             respond(_in_channel(_stop(store, argument or "", channel, user)))
             return
 
-        respond(_in_channel(handle_numbers(text.split() or [text], channel, user)))
+        emails = EMAIL_RE.findall(text)
+        numbers = [t for t in text.split() if not EMAIL_RE.fullmatch(t)]
+        respond(
+            _in_channel(
+                handle_numbers(numbers or [text], channel, user, ",".join(emails) or None)
+            )
+        )
         scheduler.nudge()  # after responding: the first poll takes minutes
 
     # --- buttons ---------------------------------------------------------
@@ -144,8 +165,9 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
         if not numbers:
             say(text=HELP, thread_ts=event.get("thread_ts"))
             return
+        emails = ",".join(EMAIL_RE.findall(event.get("text", ""))) or None
         say(
-            text=handle_numbers(numbers, event["channel"], event.get("user")),
+            text=handle_numbers(numbers, event["channel"], event.get("user"), emails),
             thread_ts=event.get("thread_ts"),
         )
         scheduler.nudge()

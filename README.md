@@ -80,6 +80,38 @@ Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
 
+## Email notifications
+
+Optional and off until `SMTP_HOST` and `EMAIL_FROM` are set. When on, the
+same updates go out by mail with both workbooks attached.
+
+```
+/awb 488-20744846 candy.tang@qtlogistics.eu
+```
+
+Any address in the command becomes a recipient for that AWB.
+`EMAIL_ALWAYS_TO` adds standing recipients who get every AWB regardless of
+who started it.
+
+**Cadence is stricter than Slack**: the first check, real changes, and the
+end. An unchanged poll never sends mail, whatever `EMAIL_ON_CHANGE` says --
+a notifier that mails "nothing happened" is one people filter into a folder
+they stop opening.
+
+Every mail for an AWB keeps the same subject and references the first
+mail's `Message-ID`, so a client collapses them into one conversation
+rather than an inbox full of near-identical messages.
+
+A mail failure is logged and swallowed: Slack has already carried the same
+update, and an SMTP outage must not take down the polling cycle.
+
+### Google Workspace
+
+`smtp.gmail.com:587` with STARTTLS, using an **app password** on a
+dedicated account -- the account password will not work with 2FA on.
+`lej-cc-doctor` connects and authenticates without sending anything, so you
+can verify the credentials before the first AWB depends on them.
+
 ## Attachments
 
 Each update carries two files:

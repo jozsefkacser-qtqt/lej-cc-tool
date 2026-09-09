@@ -14,6 +14,7 @@ from typing import Protocol
 from . import formatting
 from .awb import format_display
 from .config import Settings
+from .emailer import EmailNotifier
 from .errors import LejCcError
 from .model import Snapshot, diff_snapshots
 from .parser import StatusMapper, parse_workbook
@@ -60,12 +61,14 @@ class Tracker:
         client: PortGroundClient,
         notifier: Notifier,
         mapper: StatusMapper | None = None,
+        email: EmailNotifier | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.client = client
         self.notifier = notifier
         self.mapper = mapper or StatusMapper.load(settings.status_map_path)
+        self.email = email
 
     # --- scheduling policy ---------------------------------------------
 
@@ -192,7 +195,11 @@ class Tracker:
             )
 
         if not self._should_attach(job, changed=changed, is_final=is_final):
+            self._email_update(job, snapshot, diff, next_run_at, is_final=is_final)
             return
+
+        # Built once and shared: Slack uploads it, email attaches the same file.
+        sheet = self._build_chase_sheet(job, snapshot) if settings.attach_open_summary else None
 
         # While tracking continues, files belong in the thread so the channel
         # stays readable. On the last update there is no thread worth opening
@@ -201,8 +208,14 @@ class Tracker:
         destination = None if is_final else job.thread_ts
 
         # The chase sheet goes first: it is the one people actually open.
-        if settings.attach_open_summary:
-            self._upload_chase_sheet(job, snapshot, destination)
+        if sheet is not None:
+            self.notifier.upload(
+                job.channel_id,
+                sheet,
+                filename=open_shipments_filename(snapshot),
+                title=f"{format_display(job.mawb)} — {len(snapshot.open_rows):,} still open",
+                thread_ts=destination,
+            )
 
         if settings.attach_full_workbook:
             self.notifier.upload(
@@ -213,23 +226,52 @@ class Tracker:
                 thread_ts=destination,
             )
 
-    def _upload_chase_sheet(
-        self, job: Job, snapshot: Snapshot, thread_ts: str | None
-    ) -> None:
+        attachments = [p for p in (sheet, path if settings.attach_full_workbook else None) if p]
+        self._email_update(
+            job, snapshot, diff, next_run_at, is_final=is_final, attachments=attachments
+        )
+
+    def _build_chase_sheet(self, job: Job, snapshot: Snapshot) -> Path | None:
         try:
-            sheet = build_open_shipments_workbook(snapshot, self.settings.download_dir)
+            return build_open_shipments_workbook(snapshot, self.settings.download_dir)
         except Exception:  # noqa: BLE001 - a report bug must not lose the update
             log.exception("could not build the chase sheet for %s", job.mawb)
+            return None
+
+    def _email_update(
+        self,
+        job: Job,
+        snapshot: Snapshot,
+        diff,  # noqa: ANN001
+        next_run_at: datetime | None,
+        *,
+        is_final: bool,
+        attachments: list[Path] | None = None,
+    ) -> None:
+        """Mail the same update, on stricter rules than Slack.
+
+        Email goes out on the first check, on real change, and at the end.
+        Never on an unchanged poll: a notifier that mails "nothing happened"
+        is a notifier people filter into a folder they stop opening.
+        """
+        if self.email is None or not self.email.enabled:
             return
-        if sheet is None:
-            return  # nothing open: the full export says everything there is
-        self.notifier.upload(
-            job.channel_id,
-            sheet,
-            filename=open_shipments_filename(snapshot),
-            title=f"{format_display(job.mawb)} — {len(snapshot.open_rows):,} still open",
-            thread_ts=thread_ts,
+        changed = diff.has_changes or job.is_first_poll
+        if not (job.is_first_poll or is_final or (changed and self.settings.email_on_change)):
+            return
+
+        message_id = self.email.send_update(
+            job,
+            snapshot,
+            diff=diff,
+            next_run_at=next_run_at,
+            is_final=is_final,
+            attachments=attachments,
         )
+        # Remember the first mail so later ones thread underneath it.
+        if message_id and not job.email_message_id:
+            self.store.set_email_message_id(job.id, message_id)
+            job.email_message_id = message_id
 
     def _should_attach(self, job: Job, *, changed: bool, is_final: bool) -> bool:
         if job.is_first_poll or is_final:
@@ -293,6 +335,8 @@ class Tracker:
         )
 
     def _report(self, job: Job, message: str, *, fatal: bool) -> None:
+        if self.email is not None:
+            self.email.send_error(job, message, fatal=fatal)
         self.notifier.post(
             job.channel_id,
             text=f"{format_display(job.mawb)}: {message}",

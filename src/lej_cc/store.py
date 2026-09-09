@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshots_job ON snapshots (job_id, taken_at);
 """
 
+#: Columns added after the first release. Applied to existing databases by
+#: `_migrate`, which is the only safe way to evolve a file that already holds
+#: jobs somebody is waiting on.
+MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("jobs", "email_to", "TEXT"),
+    ("jobs", "email_message_id", "TEXT"),
+    ("jobs", "source", "TEXT NOT NULL DEFAULT 'slack'"),
+)
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -98,6 +107,14 @@ class Job:
     last_total: int | None = None
     last_polled_at: datetime | None = None
     finish_reason: str | None = None
+    #: Comma-separated recipients specific to this job, on top of the
+    #: always-to list. Set from the Slack command, or later by the requester
+    #: of an email-triggered job.
+    email_to: str | None = None
+    #: Message-ID of the first mail sent for this job; later mails reference
+    #: it so a mail client threads them into one conversation.
+    email_message_id: str | None = None
+    source: str = "slack"
 
     @property
     def is_first_poll(self) -> bool:
@@ -126,7 +143,14 @@ class Job:
             last_total=row["last_total"],
             last_polled_at=_dt(row["last_polled_at"]),
             finish_reason=row["finish_reason"],
+            email_to=row["email_to"],
+            email_message_id=row["email_message_id"],
+            source=row["source"] or "slack",
         )
+
+    @property
+    def email_recipients(self) -> list[str]:
+        return [a.strip() for a in (self.email_to or "").split(",") if a.strip()]
 
 
 class JobStore:
@@ -144,6 +168,17 @@ class JobStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a database was first created."""
+        for table, column, definition in MIGRATIONS:
+            existing = {
+                row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})")
+            }
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                log.info("migrated %s: added column %s", table, column)
 
     def close(self) -> None:
         self._conn.close()
@@ -158,6 +193,8 @@ class JobStore:
         *,
         thread_ts: str | None = None,
         run_at: datetime | None = None,
+        email_to: str | None = None,
+        source: str = "slack",
     ) -> Job | None:
         """Insert a tracking job. Returns None if this AWB is already tracked here."""
         now = utcnow()
@@ -165,8 +202,18 @@ class JobStore:
             try:
                 cur = self._conn.execute(
                     "INSERT INTO jobs (mawb, channel_id, thread_ts, requested_by, state,"
-                    " created_at, next_run_at) VALUES (?,?,?,?, 'active', ?, ?)",
-                    (mawb, channel_id, thread_ts, requested_by, _iso(now), _iso(run_at or now)),
+                    " created_at, next_run_at, email_to, source)"
+                    " VALUES (?,?,?,?, 'active', ?,?,?,?)",
+                    (
+                        mawb,
+                        channel_id,
+                        thread_ts,
+                        requested_by,
+                        _iso(now),
+                        _iso(run_at or now),
+                        email_to,
+                        source,
+                    ),
                 )
             except sqlite3.IntegrityError:
                 return None  # unique index on (mawb, channel_id) where active
@@ -291,6 +338,13 @@ class JobStore:
                 (state, reason, _iso(utcnow()), job_id),
             )
         log.info("job %s finished: %s (%s)", job_id, state, reason)
+
+    def set_email_message_id(self, job_id: int, message_id: str) -> None:
+        """Record the first mail's id so later mails thread under it."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE jobs SET email_message_id = ? WHERE id = ?", (message_id, job_id)
+            )
 
     def set_thread(self, job_id: int, thread_ts: str) -> None:
         with self._lock:

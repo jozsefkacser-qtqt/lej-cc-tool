@@ -14,6 +14,7 @@ from slack_sdk.http_retry.builtin_handlers import (
 )
 
 from .config import Settings, configure_logging
+from .emailer import EmailNotifier
 from .parser import StatusMapper
 from .portground import PortGroundClient
 from .scheduler import PollScheduler
@@ -42,7 +43,10 @@ def main() -> int:
         )
     )
     mapper = StatusMapper.load(settings.status_map_path)
-    tracker = Tracker(settings, store, client, notifier, mapper)
+    email = EmailNotifier(settings)
+    if email.enabled:
+        log.info("email notifications on, always-to: %s", settings.email_always_to or "(none)")
+    tracker = Tracker(settings, store, client, notifier, mapper, email=email)
     scheduler = PollScheduler(store, tracker)
 
     app = build_app(settings, store, scheduler)
