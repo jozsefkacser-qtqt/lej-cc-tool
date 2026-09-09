@@ -247,6 +247,12 @@ The PortGround key is a bearer credential passed in a URL query string.
 | `src/lej_cc/slack_app.py` | Commands, buttons, mentions |
 | `src/lej_cc/cli.py` | One-shot check, no Slack |
 
+## Where this is going
+
+[`docs/ROADMAP.md`](docs/ROADMAP.md) holds the audit findings -- fixed and
+outstanding, with honest severities -- the design for email in and out, and
+the full map of what is worth building, sized and ranked.
+
 ## Not built yet
 
 - Google Drive archive of every workbook, Google Sheet dashboard
