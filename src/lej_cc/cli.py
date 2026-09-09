@@ -54,7 +54,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  not cleared  {snapshot.not_cleared:>6,}")
     if snapshot.other:
         print(f"  other        {snapshot.other:>6,}   {snapshot.unknown_statuses}")
-    print(f"  items        {snapshot.items_cleared:>6,} / {snapshot.items_total:,}")
+    print(f"  decl. lines  {snapshot.items_cleared:>6,} / {snapshot.items_total:,}")
+    if snapshot.resolved_mawbs:
+        shown = ", ".join(format_display(m) for m in snapshot.resolved_mawbs[:8])
+        extra = f" (+{len(snapshot.resolved_mawbs) - 8} more)" if len(
+            snapshot.resolved_mawbs) > 8 else ""
+        print(f"  covers       {len(snapshot.resolved_mawbs)} MAWB(s): {shown}{extra}")
     if snapshot.generated_at:
         print(f"  data as of   {snapshot.generated_at:%Y-%m-%d %H:%M:%S %Z}")
 

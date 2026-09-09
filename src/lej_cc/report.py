@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 #: what the chase sheet contains -- it is the whole definition of the report.
 COLUMNS: list[tuple[str, str, int]] = [
     ("HAWB / Tracking number", "hawb", 24),
+    # A booking reference can span several master air waybills, so the sheet
+    # has to say which one each open shipment belongs to. On a single-waybill
+    # export the column is constant, which costs nothing.
+    ("MAWB", "mawb", 14),
     ("Status", "final_status_raw", 14),
     ("Days open", "_days_open", 11),
     ("Invoice Number", "invoice_number", 22),

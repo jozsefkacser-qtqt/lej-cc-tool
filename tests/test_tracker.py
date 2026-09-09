@@ -315,6 +315,7 @@ def test_chase_sheet_holds_only_open_rows_and_only_useful_columns(settings, stor
     assert [c.value for c in sheet[1]] == [header for header, _, _ in COLUMNS]
     assert sheet.max_row == 5  # header + the 4 open shipments, not all 10
     assert sheet.max_column == len(COLUMNS) < 17
+    assert "MAWB" in [c.value for c in sheet[1]]  # which waybill each line is on
     assert sheet.freeze_panes == "A2"
     assert sheet.auto_filter.ref is not None
 
