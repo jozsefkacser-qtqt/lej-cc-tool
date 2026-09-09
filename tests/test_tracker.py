@@ -350,3 +350,22 @@ def test_short_open_lists_are_still_named_inline(settings, store, data_dir):
 
     rendered = str(notifier.posts[0]["blocks"])
     assert "0034043" in rendered  # only 4 open, so naming them helps
+
+
+def test_already_cleared_awb_attaches_the_export_to_the_channel(settings, store, data_dir):
+    """Someone asks about a finished AWB: one card, and the export where they
+    can see it. A thread reply on a message with no other replies is hidden."""
+    tracker, notifier = build(settings, store, [data_dir / "all_cleared.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert len(notifier.uploads) == 1
+    upload = notifier.uploads[0]
+    assert upload["thread_ts"] is None, "final attachment must go to the channel"
+    assert upload["filename"].startswith("shipment_status_")
+
+
+def test_ongoing_updates_keep_their_files_in_the_thread(settings, store, data_dir):
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert all(u["thread_ts"] is not None for u in notifier.uploads)

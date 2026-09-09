@@ -163,6 +163,7 @@ class Tracker:
             inline_threshold=settings.inline_list_threshold,
             is_final=is_final,
             poll_count=job.poll_count + 1,
+            tracking_since=job.created_at,
         )
         text = formatting.summary_line(snapshot)
 
@@ -193,9 +194,15 @@ class Tracker:
         if not self._should_attach(job, changed=changed, is_final=is_final):
             return
 
+        # While tracking continues, files belong in the thread so the channel
+        # stays readable. On the last update there is no thread worth opening
+        # -- an AWB that is already 100% gets one card and one file -- so the
+        # attachment goes to the channel where people will actually see it.
+        destination = None if is_final else job.thread_ts
+
         # The chase sheet goes first: it is the one people actually open.
         if settings.attach_open_summary:
-            self._upload_chase_sheet(job, snapshot)
+            self._upload_chase_sheet(job, snapshot, destination)
 
         if settings.attach_full_workbook:
             self.notifier.upload(
@@ -203,10 +210,12 @@ class Tracker:
                 path,
                 filename=snapshot.source_filename or path.name,
                 title=f"{format_display(job.mawb)} — full export from PortGround",
-                thread_ts=job.thread_ts,
+                thread_ts=destination,
             )
 
-    def _upload_chase_sheet(self, job: Job, snapshot: Snapshot) -> None:
+    def _upload_chase_sheet(
+        self, job: Job, snapshot: Snapshot, thread_ts: str | None
+    ) -> None:
         try:
             sheet = build_open_shipments_workbook(snapshot, self.settings.download_dir)
         except Exception:  # noqa: BLE001 - a report bug must not lose the update
@@ -219,7 +228,7 @@ class Tracker:
             sheet,
             filename=open_shipments_filename(snapshot),
             title=f"{format_display(job.mawb)} — {len(snapshot.open_rows):,} still open",
-            thread_ts=job.thread_ts,
+            thread_ts=thread_ts,
         )
 
     def _should_attach(self, job: Job, *, changed: bool, is_final: bool) -> bool:

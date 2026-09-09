@@ -98,11 +98,14 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             respond("*Currently tracking:*\n" + "\n".join(lines))
             return
 
+        # Starting and stopping are channel events: everyone watching this
+        # channel needs to know an AWB is being tracked, or has stopped being
+        # tracked, without having to ask who did it. Queries stay private.
         if verb == "stop":
-            respond(_stop(store, argument or "", channel))
+            respond(_in_channel(_stop(store, argument or "", channel, user)))
             return
 
-        respond(handle_numbers(text.split() or [text], channel, user))
+        respond(_in_channel(handle_numbers(text.split() or [text], channel, user)))
         scheduler.nudge()  # after responding: the first poll takes minutes
 
     # --- buttons ---------------------------------------------------------
@@ -128,8 +131,10 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
         ack()
         mawb = body["actions"][0]["value"]
         channel = body["channel"]["id"]
-        message = _stop(store, mawb, channel, stopped_by=body["user"]["id"])
-        client.chat_postEphemeral(channel=channel, user=body["user"]["id"], text=message)
+        user = body["user"]["id"]
+        message = _stop(store, mawb, channel, stopped_by=user)
+        # Visible to the channel: stopping is a state change others rely on.
+        client.chat_postMessage(channel=channel, text=message)
 
     # --- passive detection ----------------------------------------------
 
@@ -155,6 +160,15 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
     return app
 
 
+def _in_channel(text: str) -> dict:
+    """Wrap a slash-command reply so the whole channel sees it.
+
+    Slack defaults command replies to ephemeral, which meant only the person
+    who typed /awb knew an AWB was being tracked.
+    """
+    return {"response_type": "in_channel", "text": text}
+
+
 def _stop(store: JobStore, raw: str, channel: str, stopped_by: str | None = None) -> str:
     try:
         mawb = normalize(raw.strip(), verify_checksum=False)
@@ -164,4 +178,5 @@ def _stop(store: JobStore, raw: str, channel: str, stopped_by: str | None = None
     if not job:
         return f"`{format_display(mawb)}` is not being tracked in this channel."
     store.finish(job.id, "stopped", f"stopped by {stopped_by or 'user'}")
-    return f"🛑 Stopped tracking `{format_display(mawb)}`."
+    who = f" by <@{stopped_by}>" if stopped_by else ""
+    return f"🛑 Stopped tracking `{format_display(mawb)}`{who}."

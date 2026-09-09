@@ -13,18 +13,26 @@ parallel on independent clocks.
 ```
 
 ```
-📦 MAWB 488-20744846 — customs clearance
-████████████░░░░░░░░  60.0%
-6 of 10 shipments cleared · 12/20 items (60%)
+📦 936-02927993 — customs clearance
+🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜  97.8%
 
-✅ Cleared 6        ⏳ Not cleared 4
-Since last check: +4 cleared
+✅ Cleared            ⏳ Open
+1,544 of 1,578        34
 
-Open (4): `0034…0007`, `0034…0008`, `0034…0009`, `0034…0010`
+📦 Items              ⏱ Tracking
+9,264 of 9,434 (98%)  1h 15m
 
-Data as of 15:05 · next check 15:20 · check #2 · started by @jozsef
-[ Refresh now ]  [ Stop tracking ]
+Since last check: ▲ 412 cleared
+──────────────────────────────────────
+34 shipments still open — see the attached OPEN…xlsx, oldest first.
+
+📄 data 13:24 · next check 13:39 · check #3 · by @jozsef
+[ 🔄 Refresh now ]  [ Stop tracking ]
 ```
+
+The bar is coloured by state -- green above 95%, amber above 50%, red below
+-- and only a genuine 100% fills it. 97.8% rounding up to ten green cells
+would say "finished" about an AWB with 34 shipments still stuck.
 
 ## How it works
 
@@ -53,6 +61,10 @@ at 10:15 stay 15 minutes apart. See `src/lej_cc/scheduler.py`.
 
 Buttons on each status card: **Refresh now**, **Stop tracking**.
 
+Starting and stopping are announced **to the channel** -- everyone watching
+needs to know an AWB is being tracked without asking who did it. `/awb list`
+and `/awb help` stay private to whoever typed them.
+
 ## Attachments
 
 Each update carries two files:
@@ -64,6 +76,11 @@ Each update carries two files:
 
 On a real master AWB that is 34 rows x 10 columns instead of 1578 x 17.
 Set `ATTACH_FULL_WORKBOOK=false` to keep only the short one.
+
+While tracking continues the files go into the card's thread, so the channel
+stays readable. On the **final** update -- including an AWB that is already
+100% cleared when someone asks about it -- they go to the channel instead: a
+thread reply on a message with no other replies is a file nobody finds.
 
 The columns of the chase sheet are defined by `COLUMNS` in
 `src/lej_cc/report.py` -- that list is the whole definition of the report.
