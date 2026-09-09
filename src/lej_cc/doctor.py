@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -137,22 +138,35 @@ def check_slack(settings) -> Result:  # noqa: ANN001
 
 
 def check_portground(settings, mawb: str) -> Result:  # noqa: ANN001
-    from .errors import LejCcError
+    from .errors import ApiUnavailable, LejCcError
     from .parser import parse_workbook
     from .portground import PortGroundClient
 
+    started = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp:
         try:
             with PortGroundClient(settings) as client:
                 path, _ = client.download(mawb, Path(tmp))
             snapshot = parse_workbook(path, mawb)
         except LejCcError as exc:
-            return Result("portground api", FAIL, f"{type(exc).__name__}: {exc.user_message}")
+            elapsed = time.monotonic() - started
+            hint = ""
+            if isinstance(exc, ApiUnavailable) and elapsed >= settings.http_timeout_seconds:
+                hint = (
+                    f" — it ran the full {settings.http_timeout_seconds:.0f}s timeout. "
+                    "The export is slow to generate; raise HTTP_TIMEOUT_SECONDS in .env."
+                )
+            return Result(
+                "portground api",
+                FAIL,
+                f"{type(exc).__name__} after {elapsed:.0f}s: {exc.user_message}{hint}",
+            )
         except Exception as exc:  # noqa: BLE001
             return Result("portground api", FAIL, f"unexpected: {exc}")
 
+    elapsed = time.monotonic() - started
     detail = (
-        f"downloaded and parsed {mawb}: {snapshot.total:,} shipments, "
+        f"downloaded and parsed {mawb} in {elapsed:.0f}s: {snapshot.total:,} shipments, "
         f"{snapshot.percent:.0f}% cleared"
     )
     if snapshot.unknown_statuses:

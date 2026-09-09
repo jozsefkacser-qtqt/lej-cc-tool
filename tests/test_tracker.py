@@ -264,3 +264,26 @@ def test_a_bug_in_the_cycle_does_not_kill_the_scheduler(settings, store):
 
     assert store.get(job.id).state == "active"
     assert store.get(job.id).consecutive_failures == 1
+
+
+def test_timeout_default_allows_for_a_slow_export():
+    """A live call measured 112s for the smallest reference AWB, so a default
+    under two minutes fails on healthy responses."""
+    from lej_cc.config import Settings
+
+    settings = Settings(slack_bot_token="x", slack_app_token="x", portground_api_key="x")
+    assert settings.http_timeout_seconds >= 180
+
+
+def test_claim_lease_outlasts_the_slowest_poll(tmp_path):
+    """The lease must exceed timeout x retries, or a slow poll gets claimed
+    twice and one AWB is downloaded and posted about in parallel."""
+    import inspect
+
+    from lej_cc.config import Settings
+    from lej_cc.store import JobStore
+
+    settings = Settings(slack_bot_token="x", slack_app_token="x", portground_api_key="x")
+    lease = inspect.signature(JobStore.claim_due).parameters["lease_seconds"].default
+    worst_case_poll = settings.http_timeout_seconds * 2  # two attempts
+    assert lease > worst_case_poll

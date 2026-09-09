@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     # --- PortGround ---
     portground_api_key: str = Field(..., description="API key for the status export")
     portground_base_url: str = "https://ecommerce.portground.com"
-    http_timeout_seconds: float = 60.0
+    #: The export is generated on demand and is slow: a 225-row workbook
+    #: measured 112 s from a client in Germany, and larger master AWBs take
+    #: longer still. Anything under a couple of minutes fails on healthy calls.
+    http_timeout_seconds: float = 300.0
 
     # --- polling schedule ---
     #: Delay before the second poll. The first poll happens immediately.

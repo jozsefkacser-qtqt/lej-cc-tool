@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -48,7 +49,7 @@ class PortGroundClient:
 
     @retry(
         retry=retry_if_exception_type(ApiUnavailable),
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=2, min=2, max=30),
         reraise=True,
     )
@@ -59,6 +60,7 @@ class PortGroundClient:
         raised immediately so the caller can report it to Slack.
         """
         url = self.settings.download_url(mawb)
+        started = time.monotonic()
         try:
             response = self._client.get(url)
         except httpx.TimeoutException as exc:
@@ -95,7 +97,10 @@ class PortGroundClient:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = dest_dir / f"{mawb}_{stamp}.xlsx"
         path.write_bytes(body)
-        log.info("downloaded %s (%d bytes) -> %s", mawb, len(body), path)
+        log.info(
+            "downloaded %s (%d bytes in %.1fs) -> %s",
+            mawb, len(body), time.monotonic() - started, path,
+        )
         return path, filename
 
     @staticmethod

@@ -189,8 +189,14 @@ class JobStore:
 
     # --- scheduling -----------------------------------------------------
 
-    def claim_due(self, limit: int = 20, lease_seconds: int = 600) -> list[Job]:
-        """Atomically take ownership of jobs whose next_run_at has passed."""
+    def claim_due(self, limit: int = 20, lease_seconds: int = 1800) -> list[Job]:
+        """Atomically take ownership of jobs whose next_run_at has passed.
+
+        The lease must outlast the slowest possible poll. PortGround can take
+        minutes to generate a workbook, and the client retries once, so a
+        single poll can legitimately run for ten minutes; a shorter lease
+        would let the next tick start a second poll of the same AWB.
+        """
         now = utcnow()
         with self._lock:
             rows = self._conn.execute(
