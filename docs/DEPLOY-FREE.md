@@ -55,14 +55,30 @@ always-on host once you are happy with it.**
 WSL's NAT networking, normally the awkward part of hosting anything under
 WSL, is a non-issue here — the bot accepts no inbound connections.
 
+### First: make sure you are actually in Ubuntu
+
+This is the step that catches everyone. Windows PowerShell and Ubuntu are
+two different shells, and Linux commands pasted into PowerShell fail in
+confusing ways — a trailing `\` becomes a filename, and you get
+`fatal: repository '\' does not exist`.
+
+Open Ubuntu from the Start menu, or type `wsl` in PowerShell. Then check
+the prompt:
+
+| Prompt | Where you are |
+|---|---|
+| `PS C:\Windows\system32>` | **PowerShell — wrong.** Type `wsl` and press Enter. |
+| `jozsefkqt@DESKTOP-...:~$` | Ubuntu — correct. |
+
+The rule of thumb: the prompt must end in `$`, not `>`.
+
 ### Fastest path — no Docker, about five minutes
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv git
 
 # Clone into the WSL filesystem, NOT /mnt/c — much faster, no permission oddities
-git clone -b claude/awb-tracking-slack-bot-noy6d8 \
-    https://github.com/jozsefkacser-qtqt/lej-cc-tool.git ~/lej-cc-tool
+git clone -b claude/awb-tracking-slack-bot-noy6d8 https://github.com/jozsefkacser-qtqt/lej-cc-tool.git ~/lej-cc-tool
 cd ~/lej-cc-tool
 
 python3 -m venv .venv
@@ -166,8 +182,7 @@ Ubuntu images ship without git, so install it and fetch the repository:
 ```bash
 sudo apt update && sudo apt install -y git
 sudo mkdir -p /opt/lej-cc-tool && sudo chown "$USER" /opt/lej-cc-tool
-git clone -b claude/awb-tracking-slack-bot-noy6d8 \
-    https://github.com/jozsefkacser-qtqt/lej-cc-tool.git /opt/lej-cc-tool
+git clone -b claude/awb-tracking-slack-bot-noy6d8 https://github.com/jozsefkacser-qtqt/lej-cc-tool.git /opt/lej-cc-tool
 cd /opt/lej-cc-tool
 ```
 
