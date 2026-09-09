@@ -60,6 +60,20 @@ class PollScheduler:
                 pool.submit(self.tracker.run_once, job)
         return len(jobs)
 
+    def nudge(self) -> None:
+        """Run a tick in the background, without waiting for it.
+
+        Used when a Slack command asks for an immediate poll: a download can
+        take minutes, and the handler has to reply long before that.
+        """
+        threading.Thread(target=self._safe_tick, name="poll-nudge", daemon=True).start()
+
+    def _safe_tick(self) -> None:
+        try:
+            self.tick()
+        except Exception:  # noqa: BLE001 - a nudge must never take the app down
+            log.exception("nudged tick failed")
+
     def housekeeping(self, interval_seconds: int = 3600) -> None:
         """Purge stale downloads, at most once per `interval_seconds`."""
         now = time.monotonic()

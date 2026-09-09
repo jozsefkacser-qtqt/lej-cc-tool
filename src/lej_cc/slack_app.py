@@ -47,7 +47,11 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
         if job is None:  # lost a race against a duplicate command
             return f"⏳ `{format_display(mawb)}` is already being tracked here."
         log.info("tracking %s in %s for %s (job %s)", mawb, channel, user, job.id)
-        return f"🔎 Tracking `{format_display(mawb)}` — first check running now."
+        return (
+            f"🔎 Tracking `{format_display(mawb)}` — first check running now. "
+            "PortGround takes a couple of minutes to build the export, so the "
+            "first status will follow shortly."
+        )
 
     def handle_numbers(raw_numbers: list[str], channel: str, user: str | None) -> str:
         replies: list[str] = []
@@ -61,7 +65,6 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
                 replies.append(f"🚫 {exc.user_message}")
                 continue
             replies.append(start_tracking(mawb, channel, user))
-        scheduler.tick()  # run the first poll now instead of waiting for the loop
         return "\n".join(replies)
 
     # --- /awb ------------------------------------------------------------
@@ -100,6 +103,7 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             return
 
         respond(handle_numbers(text.split() or [text], channel, user))
+        scheduler.nudge()  # after responding: the first poll takes minutes
 
     # --- buttons ---------------------------------------------------------
 
@@ -117,7 +121,7 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             )
             return
         store.reschedule(job.id, utcnow(), increment_poll=False)
-        scheduler.tick()
+        scheduler.nudge()
 
     @app.action("awb_stop")
     def act_stop(ack: Ack, body: dict, client: WebClient) -> None:
@@ -139,6 +143,7 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
             text=handle_numbers(numbers, event["channel"], event.get("user")),
             thread_ts=event.get("thread_ts"),
         )
+        scheduler.nudge()
 
     @app.event("message")
     def on_message(event: dict) -> None:

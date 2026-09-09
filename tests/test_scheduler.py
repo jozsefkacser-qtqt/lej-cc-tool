@@ -113,3 +113,23 @@ def test_housekeeping_runs_at_most_once_per_interval(tmp_path):
     first = scheduler._last_housekeeping
     scheduler.housekeeping()
     assert scheduler._last_housekeeping == first  # second call is a no-op
+
+
+def test_nudge_returns_immediately(tmp_path):
+    """A Slack command must not wait for the poll: PortGround takes minutes."""
+    import time
+
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.create_job("48820744846", "C1", "U1")
+
+    tracker = SlowTracker(delay=0.5)
+    scheduler = PollScheduler(store, tracker)  # type: ignore[arg-type]
+
+    started = time.monotonic()
+    scheduler.nudge()
+    assert time.monotonic() - started < 0.2, "nudge blocked on the poll"
+
+    deadline = time.monotonic() + 5
+    while not tracker.seen and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert tracker.seen == ["48820744846"], "nudge never ran the poll"
