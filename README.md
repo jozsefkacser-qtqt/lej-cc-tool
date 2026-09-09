@@ -19,7 +19,7 @@ parallel on independent clocks.
 ✅ Cleared            ⏳ Open
 1,544 of 1,578        34
 
-📦 Items              ⏱ Tracking
+🧾 Declaration lines  ⏱ Tracking
 9,264 of 9,434 (98%)  1h 15m
 
 Since last check: ▲ 412 cleared
@@ -42,7 +42,7 @@ actually asking -- *is this the one from May?* -- rather than just "cleared":
 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩  100.0%
 
 ✅ Cleared 225 of 225        🏁 Finished 20 May 2026 14:38
-📦 Items 2,480 of 2,480      ⏱ 111d 22h ago · cleared over 5h 09m
+🧾 Decl. lines 2,480/2,480   ⏱ 111d 22h ago · cleared over 5h 09m
 
 📄 data 15:05 · check #1 · by @colleague
 ```
@@ -129,6 +129,19 @@ cleared):
 Columns are found by **name**, not position, so PortGround can reorder or
 append columns without breaking the parser. Only three are required:
 `HAWB / Tracking number`, `MAWB`, `Final Status`.
+
+### "Declaration lines", not items
+
+PortGround's export has a column called `Number of items`, and the obvious
+reading -- parcels -- is wrong. In the reference export for 936-00333955 it
+equals `Number of hs codes` on **all 1605 rows**, so it counts declaration
+line items (goods positions), each carrying one HS code. Averages differ
+sharply between AWBs too: 3.7 lines per shipment on one, 11.0 on the other,
+which is declaration complexity rather than parcel count.
+
+The card and the chase sheet therefore label it *Declaration lines*. The
+percentage is a secondary measure of customs workload; the headline figure
+is and stays shipments cleared, because a shipment is what gets released.
 
 ### Status mapping
 

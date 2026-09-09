@@ -38,6 +38,10 @@ class ShipmentRow:
     notification_customs_office: datetime | None = None
     invoice_number: str | None = None
     mrn_id: str | None = None
+    #: PortGround's "Number of items" column. Despite the name this counts
+    #: declaration line items, not parcels: in the reference export it equals
+    #: "Number of hs codes" on every one of the 1605 rows. Displayed as
+    #: "Declaration lines" so nobody reads it as a piece count.
     items: int = 0
 
     @property

@@ -34,7 +34,7 @@ COLUMNS: list[tuple[str, str, int]] = [
     ("Check-In", "check_in", 18),
     ("Declaration Sent", "declaration_sent", 18),
     ("Customs Notification", "notification_customs_office", 20),
-    ("Items", "items", 8),
+    ("Decl. lines", "items", 12),
 ]
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3B57")

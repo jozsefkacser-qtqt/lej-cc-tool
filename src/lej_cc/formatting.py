@@ -152,7 +152,8 @@ def build_status_blocks(
         {
             "type": "mrkdwn",
             "text": (
-                f"*📦 Items*\n{snapshot.items_cleared:,} of {snapshot.items_total:,} "
+                f"*🧾 Declaration lines*\n{snapshot.items_cleared:,} of "
+                f"{snapshot.items_total:,} "
                 f"({snapshot.items_percent:.0f}%)"
             ),
         },
