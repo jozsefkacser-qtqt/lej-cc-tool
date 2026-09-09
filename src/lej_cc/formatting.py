@@ -228,6 +228,11 @@ def build_status_blocks(
         )
 
     context: list[str] = []
+    if snapshot.resolved_mawbs:
+        shown = ", ".join(format_display(m) for m in snapshot.resolved_mawbs[:3])
+        if len(snapshot.resolved_mawbs) > 3:
+            shown += f" +{len(snapshot.resolved_mawbs) - 3} more"
+        context.append(f"✈️ MAWB {shown}")
     if snapshot.generated_at:
         context.append(f"📄 data {_hhmm(snapshot.generated_at)}")
     if next_run_at and not done and not is_final:

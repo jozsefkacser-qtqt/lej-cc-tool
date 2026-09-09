@@ -135,15 +135,33 @@ The columns of the chase sheet are defined by `COLUMNS` in
 rows with no timestamps at all sort last, since nothing has happened to
 them yet.
 
-## AWB numbers
+## What you can track
 
-Input is normalised to the bare 11 digits PortGround expects, so
-`488-20744846`, `488 2074 4846` and `48820744846` are all accepted.
+Two kinds of identifier, validated very differently.
+
+**Master air waybills** are normalised to the bare 11 digits PortGround
+expects, so `488-20744846`, `488 2074 4846` and `48820744846` are all
+accepted.
 
 The last digit is an IATA check digit (`serial mod 7`, Resolution 600a), and
 it is verified locally. A mistyped AWB is rejected in Slack in
 milliseconds rather than becoming a polling job that never finds anything.
 Both reference AWBs (488-20744846, 936-00333955) pass this check.
+
+**Booking references** such as `OyTM202608137666` are passed through to
+PortGround exactly as typed, case included, since nothing here knows whether
+it compares case-sensitively. They carry no checksum, so a typo in one can
+only be caught by the API saying it has never heard of it.
+
+Rows returned for a reference carry their real waybill number in the `MAWB`
+column. That is the answer, not a mismatch, so the file-identity check
+applies only to waybill requests -- and the card reports which waybill the
+reference turned out to be.
+
+References are accepted when someone types one as a command argument, and
+deliberately **not** matched when scanning message text: with no checksum,
+any pattern loose enough to catch `OyTM202608137666` would also catch order
+numbers, file names and half the words in a signature.
 
 ## The export format
 

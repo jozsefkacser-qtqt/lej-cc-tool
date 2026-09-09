@@ -105,3 +105,19 @@ def test_in_flight_awb_shows_tracking_time_not_a_finish_stamp():
 
     rendered = str(build_status_blocks(snapshot, tracking_since=now - timedelta(hours=2)))
     assert "Tracking" in rendered and "🏁" not in rendered
+
+
+def test_reference_card_shows_what_it_resolved_to():
+    snapshot = snap(5, 10)
+    snapshot.mawb = "OyTM202608137666"
+    snapshot.resolved_mawbs = ["48820744846"]
+
+    blocks = build_status_blocks(snapshot)
+    assert "OyTM202608137666" in blocks[0]["text"]["text"]
+    assert "488-20744846" in str(blocks)  # the waybill it turned out to be
+
+
+def test_many_resolved_mawbs_are_truncated():
+    snapshot = snap(5, 10)
+    snapshot.resolved_mawbs = [f"4882074484{i}" for i in range(6)]
+    assert "+3 more" in str(build_status_blocks(snapshot))

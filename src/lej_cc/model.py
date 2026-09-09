@@ -73,6 +73,10 @@ class Snapshot:
     source_filename: str | None = None
     #: Raw Final Status values that did not map to a known bucket, with counts.
     unknown_statuses: dict[str, int] = field(default_factory=dict)
+    #: When tracking by a booking reference rather than an air waybill, the
+    #: actual MAWB numbers the returned rows belong to. Empty when the thing
+    #: being tracked is itself a MAWB.
+    resolved_mawbs: list[str] = field(default_factory=list)
 
     # --- headline numbers ---
 

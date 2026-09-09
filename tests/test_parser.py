@@ -128,3 +128,29 @@ def test_timezone_resolves_without_a_system_tz_database():
         text=True,
     )
     assert result.returncode == 0, f"import failed without a system tzdb:\n{result.stderr}"
+
+
+REFERENCE = "OyTM202608137666"
+
+
+def test_tracking_by_reference_accepts_rows_carrying_a_real_mawb(data_dir):
+    """The rows come back under their actual waybill number. That is not a
+    mismatch -- it is the answer to the question that was asked."""
+    snap = parse_workbook(data_dir / "all_cleared.xlsx", REFERENCE)
+
+    assert snap.total == 10
+    assert snap.mawb == REFERENCE
+    assert snap.resolved_mawbs == ["48820744846"]
+    assert snap.rows[0].mawb == "48820744846"
+
+
+def test_tracking_by_mawb_still_rejects_the_wrong_file(data_dir):
+    with pytest.raises(MawbMismatch):
+        parse_workbook(data_dir / "wrong_mawb.xlsx", "48820744846")
+
+
+def test_a_mawb_request_reports_no_resolved_numbers(data_dir):
+    """resolved_mawbs answers 'what did this reference turn out to be', which
+    is not a question a waybill request asks."""
+    snap = parse_workbook(data_dir / "all_cleared.xlsx", "48820744846")
+    assert snap.resolved_mawbs == []

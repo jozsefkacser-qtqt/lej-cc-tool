@@ -22,20 +22,57 @@ from .errors import AwbChecksumFailed, InvalidAwbFormat
 AWB_PATTERN = re.compile(r"(?<![\d-])(\d{3})[\s\-.]?(\d{4})[\s\-.]?(\d{4})(?![\d-])")
 
 _NON_DIGIT = re.compile(r"\D")
+_HAS_LETTER = re.compile(r"[A-Za-z]")
+
+#: Booking / consolidation references such as OyTM202608137666. Not air
+#: waybills and not checksummed, so there is nothing to validate beyond the
+#: shape -- PortGround decides whether the reference exists.
+REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{5,31}")
+
+
+def is_mawb(value: str) -> bool:
+    """True if `value` is a bare 11-digit master air waybill number."""
+    return len(value) == 11 and value.isdigit()
 
 
 def normalize(raw: str, *, verify_checksum: bool = True) -> str:
-    """Return the bare 11-digit form of `raw`.
+    """Return the identifier to send to PortGround.
+
+    Two shapes are accepted, and they are validated very differently.
+
+    A master air waybill is 11 digits however it was typed, and its check
+    digit is verified:
 
     >>> normalize("488-20744846")
     '48820744846'
     >>> normalize(" 936 0033 3955 ")
     '93600333955'
 
-    Raises InvalidAwbFormat if it is not 11 digits, or AwbChecksumFailed if
-    the check digit is wrong.
+    A booking or consolidation reference contains letters and is passed
+    through **exactly** as given -- case included, since nothing here knows
+    whether PortGround compares case-sensitively:
+
+    >>> normalize("OyTM202608137666")
+    'OyTM202608137666'
+
+    There is no checksum to test on a reference, so a typo in one can only
+    be caught by the API saying it has never heard of it.
     """
-    digits = _NON_DIGIT.sub("", raw or "")
+    text = (raw or "").strip()
+
+    if _HAS_LETTER.search(text):
+        if REFERENCE_PATTERN.fullmatch(text):
+            return text
+        raise InvalidAwbFormat(
+            f"{text!r} is not a usable reference",
+            user_message=(
+                f"`{raw}` doesn't look like an AWB or a booking reference. "
+                "Expected either 11 digits (`488-20744846`) or a reference "
+                "like `OyTM202608137666`."
+            ),
+        )
+
+    digits = _NON_DIGIT.sub("", text)
 
     if not digits:
         raise InvalidAwbFormat(
@@ -47,7 +84,8 @@ def normalize(raw: str, *, verify_checksum: bool = True) -> str:
             f"expected 11 digits, got {len(digits)} in {raw!r}",
             user_message=(
                 f"`{raw}` is not a valid MAWB — it has {len(digits)} digits, "
-                "but a master air waybill has 11 (e.g. `488-20744846`)."
+                "but a master air waybill has 11 (e.g. `488-20744846`). "
+                "Booking references such as `OyTM202608137666` are also accepted."
             ),
         )
     if verify_checksum and not checksum_ok(digits):
@@ -69,10 +107,12 @@ def checksum_ok(digits: str) -> bool:
     return serial % 7 == check
 
 
-def format_display(digits: str) -> str:
-    """Render as `488-20744846`, the form humans and airlines use."""
-    d = _NON_DIGIT.sub("", digits or "")
-    return f"{d[:3]}-{d[3:]}" if len(d) == 11 else digits
+def format_display(value: str) -> str:
+    """Render an AWB as `488-20744846`; leave a reference exactly as it is."""
+    digits = _NON_DIGIT.sub("", value or "")
+    if is_mawb(digits) and not _HAS_LETTER.search(value or ""):
+        return f"{digits[:3]}-{digits[3:]}"
+    return value
 
 
 def extract_all(text: str) -> list[str]:
@@ -81,6 +121,12 @@ def extract_all(text: str) -> list[str]:
     Only checksum-valid numbers are returned, which is what makes passive
     channel-watching safe: random 11-digit strings are ignored, and order is
     preserved with duplicates removed.
+
+    Booking references are deliberately **not** matched here. They have no
+    checksum, so any pattern loose enough to catch `OyTM202608137666` would
+    also catch order numbers, file names and half the words in a signature.
+    They are accepted when someone types one as a command argument, where
+    the intent is explicit.
     """
     found: list[str] = []
     for match in AWB_PATTERN.finditer(text or ""):

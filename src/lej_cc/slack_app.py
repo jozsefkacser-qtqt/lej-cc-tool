@@ -28,7 +28,8 @@ EMAIL_RE = re.compile(r"[^\s<>,;]+@[^\s<>,;]+\.[A-Za-z]{2,}")
 
 HELP = (
     "*AWB customs-clearance tracking*\n"
-    "• `/awb 488-20744846` — start tracking (several numbers at once are fine)\n"
+    "• `/awb 488-20744846` — start tracking (several at once are fine)\n"
+    "• `/awb OyTM202608137666` — booking references work too\n"
     "• `/awb 488-20744846 name@qtlogistics.eu` — and email the updates there\n"
     "• `/awb list` — what is currently being tracked in this channel\n"
     "• `/awb stop 488-20744846` — stop tracking\n"

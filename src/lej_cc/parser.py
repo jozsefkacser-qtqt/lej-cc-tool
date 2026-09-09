@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import openpyxl
 import yaml
 
+from .awb import is_mawb
 from .errors import AwbNotFound, MawbMismatch, SchemaDrift, UnexpectedPayload
 from .model import ClearanceStatus, ShipmentRow, Snapshot
 
@@ -204,6 +205,8 @@ def parse_workbook(
         shipments: list[ShipmentRow] = []
         unknown: dict[str, int] = {}
         foreign_mawbs: set[str] = set()
+        seen_mawbs: set[str] = set()
+        tracking_a_mawb = is_mawb(expected_mawb)
 
         for row in rows:
             if row is None or all(v in (None, "") for v in row):
@@ -214,9 +217,15 @@ def parse_workbook(
                 continue  # totals/footer lines have no tracking number
 
             row_mawb = (_clean(cell(row, COL_MAWB)) or "").replace("-", "").replace(" ", "")
-            if row_mawb and row_mawb != expected_mawb:
+            # The match is only meaningful when we asked for an air waybill.
+            # Tracking by a booking reference returns rows whose MAWB column
+            # holds the actual waybill number, which is not the thing we
+            # asked for and must not be treated as a mismatch.
+            if tracking_a_mawb and row_mawb and row_mawb != expected_mawb:
                 foreign_mawbs.add(row_mawb)
                 continue
+            if row_mawb:
+                seen_mawbs.add(row_mawb)
 
             raw_status = _clean(cell(row, COL_FINAL_STATUS))
             status = mapper.map(raw_status)
@@ -272,6 +281,7 @@ def parse_workbook(
     return Snapshot(
         mawb=expected_mawb,
         rows=shipments,
+        resolved_mawbs=sorted(seen_mawbs) if not tracking_a_mawb else [],
         generated_at=_parse_dt(generated_at),
         fetched_at=fetched_at or datetime.now(LOCAL_TZ),
         source_filename=source_filename or path.name,
