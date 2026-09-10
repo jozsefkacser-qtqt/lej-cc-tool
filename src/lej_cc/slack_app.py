@@ -123,11 +123,17 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
 
         emails = EMAIL_RE.findall(text)
         numbers = [t for t in text.split() if not EMAIL_RE.fullmatch(t)]
-        respond(
-            _in_channel(
-                handle_numbers(numbers or [text], channel, user, ",".join(emails) or None)
+        allowed = [a for a in emails if settings.email_allowed(a)]
+        refused = [a for a in emails if a not in allowed]
+
+        reply = handle_numbers(numbers or [text], channel, user, ",".join(allowed) or None)
+        if refused:
+            reply += (
+                f"\n🚫 Not mailing {', '.join(f'`{a}`' for a in refused)} — outside the "
+                f"allowed domains (`{settings.email_allowed_domains}`). "
+                "These updates carry customs data, so recipients are restricted."
             )
-        )
+        respond(_in_channel(reply))
         scheduler.nudge()  # after responding: the first poll takes minutes
 
     # --- buttons ---------------------------------------------------------
@@ -166,7 +172,9 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
         if not numbers:
             say(text=HELP, thread_ts=event.get("thread_ts"))
             return
-        emails = ",".join(EMAIL_RE.findall(event.get("text", ""))) or None
+        emails = ",".join(
+            a for a in EMAIL_RE.findall(event.get("text", "")) if settings.email_allowed(a)
+        ) or None
         say(
             text=handle_numbers(numbers, event["channel"], event.get("user"), emails),
             thread_ts=event.get("thread_ts"),

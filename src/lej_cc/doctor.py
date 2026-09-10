@@ -140,7 +140,20 @@ def check_email(settings) -> Result:  # noqa: ANN001
         return Result("email", FAIL, f"{detail} — {exc}")
 
     always = f", always-to {', '.join(recipients)}" if recipients else ", no standing recipients"
-    return Result("email", OK, f"{detail}{always}")
+
+    if not settings.allowed_email_domains:
+        return Result(
+            "email",
+            WARN,
+            f"{detail}{always} — EMAIL_ALLOWED_DOMAINS is empty, so anyone in the "
+            "channel can mail customs data to any address. Set it to your own "
+            "domains.",
+        )
+    return Result(
+        "email",
+        OK,
+        f"{detail}{always}, only to {', '.join(settings.allowed_email_domains)}",
+    )
 
 
 def check_slack(settings) -> Result:  # noqa: ANN001

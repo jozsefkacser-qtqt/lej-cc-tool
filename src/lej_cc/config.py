@@ -73,6 +73,29 @@ class Settings(BaseSettings):
     #: Email is more intrusive than Slack, so unchanged polls never mail.
     #: This controls whether *changed* polls do, beyond first and final.
     email_on_change: bool = True
+    #: Domains allowed to receive notifications, comma-separated. The mails
+    #: carry invoice numbers, MRNs and consignee tracking numbers, so this is
+    #: the difference between a typo being annoying and a typo being a data
+    #: disclosure. Empty means no restriction, which the preflight warns about.
+    email_allowed_domains: str = ""
+
+    @property
+    def allowed_email_domains(self) -> list[str]:
+        return [
+            d.strip().lower().lstrip("@")
+            for d in self.email_allowed_domains.split(",")
+            if d.strip()
+        ]
+
+    def email_allowed(self, address: str) -> bool:
+        """True if `address` may receive notifications."""
+        allowed = self.allowed_email_domains
+        if not allowed:
+            return True
+        domain = address.rsplit("@", 1)[-1].strip().lower()
+        # A subdomain of an allowed domain is allowed; a domain that merely
+        # ends with the same letters is not, so evilqtlogistics.eu is refused.
+        return any(domain == d or domain.endswith("." + d) for d in allowed)
 
     @property
     def email_enabled(self) -> bool:

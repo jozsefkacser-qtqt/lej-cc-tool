@@ -206,11 +206,24 @@ class EmailNotifier:
         return self.settings.email_enabled
 
     def recipients_for(self, job) -> list[str]:  # noqa: ANN001
-        """Job-specific addresses plus the standing list, order preserved."""
+        """Job-specific addresses plus the standing list, order preserved.
+
+        Addresses outside the allowed domains are dropped here as well as at
+        the point they were typed: the two checks guard different mistakes,
+        one a person's typo and one a job created before the policy existed.
+        """
         seen: list[str] = []
         for address in list(job.email_recipients) + self.settings.email_always_recipients:
-            if address.lower() not in {a.lower() for a in seen}:
-                seen.append(address)
+            if address.lower() in {a.lower() for a in seen}:
+                continue
+            if not self.settings.email_allowed(address):
+                log.warning(
+                    "refusing to mail %s: outside the allowed domains (%s)",
+                    address,
+                    self.settings.email_allowed_domains,
+                )
+                continue
+            seen.append(address)
         return seen
 
     def send_update(

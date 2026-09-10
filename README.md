@@ -93,6 +93,24 @@ Any address in the command becomes a recipient for that AWB.
 `EMAIL_ALWAYS_TO` adds standing recipients who get every AWB regardless of
 who started it.
 
+### Who may receive them
+
+These mails carry invoice numbers, MRNs and consignee tracking numbers, so
+`EMAIL_ALLOWED_DOMAINS` restricts where they can go:
+
+```ini
+EMAIL_ALLOWED_DOMAINS=qtlogistics.eu,skyqt.eu,qtzcustoms.eu
+```
+
+An address outside those domains is refused **in the channel**, where the
+person who typed it can fix it, and again before sending, which catches a
+job created before the policy existed. Subdomains of an allowed domain are
+accepted; a domain that merely ends with the same letters is not, so
+`evilqtlogistics.eu` does not pass as `qtlogistics.eu`.
+
+Leaving it empty allows any address -- switching email on never silently
+breaks -- and `lej-cc-doctor` reports that as a warning rather than a pass.
+
 **Cadence is stricter than Slack**: the first check, real changes, and the
 end. An unchanged poll never sends mail, whatever `EMAIL_ON_CHANGE` says --
 a notifier that mails "nothing happened" is one people filter into a folder

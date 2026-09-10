@@ -235,3 +235,66 @@ def test_error_mail_is_sent_and_threaded(settings, job):
     message = FakeSMTP.sent[0]
     assert "Tracking has stopped" in message.get_content()
     assert message["In-Reply-To"] == "<first@example.com>"
+
+
+# --- who may receive ----------------------------------------------------
+# The mails carry invoice numbers, MRNs and consignee tracking numbers, so a
+# mistyped address is a data disclosure rather than a wasted message.
+
+
+def test_no_allowlist_means_no_restriction(settings, job):
+    """Unset stays permissive so switching email on does not silently break;
+    the preflight is what nags about it."""
+    settings.email_allowed_domains = ""
+    assert settings.email_allowed("anyone@anywhere.example") is True
+
+
+def test_allowlisted_domain_is_accepted(settings):
+    settings.email_allowed_domains = "qtlogistics.eu, skyqt.eu"
+    assert settings.email_allowed("candy.tang@qtlogistics.eu") is True
+    assert settings.email_allowed("miroslav@skyqt.eu") is True
+
+
+def test_outside_domain_is_refused(settings):
+    settings.email_allowed_domains = "qtlogistics.eu"
+    assert settings.email_allowed("someone@gmail.com") is False
+
+
+def test_a_lookalike_domain_does_not_slip_through(settings):
+    """endswith() alone would accept this, which is the whole trap."""
+    settings.email_allowed_domains = "qtlogistics.eu"
+    assert settings.email_allowed("attacker@evilqtlogistics.eu") is False
+    assert settings.email_allowed("ops@mail.qtlogistics.eu") is True  # real subdomain
+
+
+def test_matching_ignores_case_and_a_leading_at(settings):
+    settings.email_allowed_domains = "@QTLogistics.EU"
+    assert settings.email_allowed("Candy.Tang@qtlogistics.eu") is True
+
+
+def test_refused_recipients_are_dropped_before_sending(settings, job):
+    settings.email_allowed_domains = "qtlogistics.eu"
+    job.email_to = "candy@qtlogistics.eu,outsider@gmail.com"
+
+    notifier = EmailNotifier(settings)
+    assert notifier.recipients_for(job) == ["candy@qtlogistics.eu", "ops@qtlogistics.eu"]
+
+    notifier.send_update(job, snap(5, 10))
+    assert "outsider@gmail.com" not in FakeSMTP.sent[0]["To"]
+
+
+def test_the_standing_list_is_filtered_too(settings, job):
+    """A domain policy added after EMAIL_ALWAYS_TO was set must still apply."""
+    settings.email_allowed_domains = "qtlogistics.eu"
+    settings.email_always_to = "partner@example.com"
+    job.email_to = None
+    assert EmailNotifier(settings).recipients_for(job) == []
+
+
+def test_nothing_is_sent_when_every_recipient_is_refused(settings, job):
+    settings.email_allowed_domains = "qtlogistics.eu"
+    settings.email_always_to = ""
+    job.email_to = "outsider@gmail.com"
+
+    assert EmailNotifier(settings).send_update(job, snap(5, 10)) is None
+    assert FakeSMTP.sent == []
