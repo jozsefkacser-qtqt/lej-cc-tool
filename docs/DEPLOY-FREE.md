@@ -173,6 +173,51 @@ Three things to change:
 Even then it is only as reliable as the PC. If clearance status genuinely
 needs watching overnight, use the Oracle VM.
 
+### When Slack "goes down" but nothing is wrong
+
+WSL loses DNS regularly -- after the host sleeps or resumes, when a VPN
+connects, or when Windows rewrites the generated `/etc/resolv.conf`. It
+shows up in the log as a wall of:
+
+```
+Failed to send a request to Slack API server:
+  <urlopen error [Errno -3] Temporary failure in name resolution>
+```
+
+`Errno -3` is DNS, not Slack. The bot retries and reconnects on its own --
+look for `A new session has been established` a few minutes later, and for
+`[+N identical suppressed]`, which is how a repeated line is reported.
+Tracked AWBs are unaffected: the schedule is in SQLite, and a poll that
+failed is simply retried.
+
+Check it yourself:
+
+```bash
+cat /etc/resolv.conf
+getent hosts slack.com || echo "DNS is broken right now"
+```
+
+If it keeps happening, stop WSL regenerating the file:
+
+```bash
+sudo tee /etc/wsl.conf >/dev/null <<'EOF'
+[network]
+generateResolvConf = false
+EOF
+```
+
+Then in PowerShell `wsl --shutdown`, reopen Ubuntu, and pin a resolver:
+
+```bash
+sudo rm -f /etc/resolv.conf
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
+sudo chattr +i /etc/resolv.conf   # stop it being overwritten again
+```
+
+Use your company's internal resolvers instead of those two if IT requires
+it. This is a WSL problem, and one more reason a desktop is a test host
+rather than a 24/7 one.
+
 ### A note on Docker under WSL
 
 If you want Docker here, install **Docker Engine inside WSL**

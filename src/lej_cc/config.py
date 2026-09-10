@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from pathlib import Path
 
 from pydantic import Field
@@ -94,6 +95,9 @@ class Settings(BaseSettings):
 
     status_map_path: Path | None = None
     log_level: str = "INFO"
+    #: Identical log lines repeating inside this many seconds are counted
+    #: rather than printed. 0 disables the collapsing.
+    log_repeat_window_seconds: float = 60.0
 
     def download_url(self, mawb: str) -> str:
         return (
@@ -145,15 +149,60 @@ class RedactingFilter(logging.Filter):
         return True
 
 
-def configure_logging(level: str = "INFO") -> None:
+class RepeatSuppressingFilter(logging.Filter):
+    """Collapse a line that keeps repeating into one line plus a count.
+
+    A three-minute DNS outage produced fifty near-identical Slack retry
+    errors, which is not more informative than one -- it is less, because
+    everything else scrolls away. The first occurrence goes through, repeats
+    inside the window are counted, and the next one to get through says how
+    many were held back.
+    """
+
+    def __init__(self, window_seconds: float = 60.0) -> None:
+        super().__init__()
+        self.window = window_seconds
+        self._last: dict[tuple[str, int, str], tuple[float, int]] = {}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001
+            return True
+
+        key = (record.name, record.levelno, message[:120])
+        now = time.monotonic()
+        last_emit, suppressed = self._last.get(key, (0.0, 0))
+
+        if now - last_emit < self.window:
+            self._last[key] = (last_emit, suppressed + 1)
+            return False
+
+        if suppressed:
+            record.msg = f"{message}  [+{suppressed} identical suppressed]"
+            record.args = ()
+        self._last[key] = (now, 0)
+
+        # Bound the table on a long-running process. Pruning by age alone
+        # frees nothing when the flood is of *distinct* messages, so this
+        # keeps the most recent entries and drops the rest outright.
+        if len(self._last) > 512:
+            newest = sorted(self._last.items(), key=lambda kv: kv[1][0], reverse=True)
+            self._last = dict(newest[:256])
+        return True
+
+
+def configure_logging(level: str = "INFO", *, repeat_window_seconds: float = 60.0) -> None:
     """Set up logging with credential redaction on every handler."""
     logging.basicConfig(
         level=level.upper(),
         format="%(asctime)s %(levelname)-7s %(name)-20s %(message)s",
     )
     redactor = RedactingFilter()
+    deduplicator = RepeatSuppressingFilter(repeat_window_seconds)
     for handler in logging.getLogger().handlers:
         handler.addFilter(redactor)
+        handler.addFilter(deduplicator)
 
     # Quiet the request-level chatter: the useful line is our own, which
     # reports size and duration without the URL.

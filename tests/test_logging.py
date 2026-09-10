@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 
 from lej_cc.config import RedactingFilter, configure_logging, scrub
 
@@ -77,3 +78,59 @@ def test_configured_logging_redacts_real_output():
 def test_request_chatter_is_quietened():
     configure_logging("INFO")
     assert logging.getLogger("httpx").level >= logging.WARNING
+
+
+# --- collapsing repeats -------------------------------------------------
+# A three-minute DNS outage produced fifty near-identical Slack retry errors.
+# Fifty copies of one line is less informative than one, because everything
+# else scrolls past.
+
+
+def test_a_repeating_line_is_emitted_once_then_counted():
+    from lej_cc.config import RepeatSuppressingFilter
+
+    flt = RepeatSuppressingFilter(window_seconds=60)
+
+    def record(message: str) -> logging.LogRecord:
+        return logging.LogRecord("slack_app", logging.ERROR, __file__, 1, message, None, None)
+
+    outage = "Failed to send a request to Slack API server: name resolution"
+    assert flt.filter(record(outage)) is True  # first one gets through
+    assert [flt.filter(record(outage)) for _ in range(49)] == [False] * 49
+
+
+def test_the_next_line_through_says_how_many_were_held_back():
+    from lej_cc.config import RepeatSuppressingFilter
+
+    flt = RepeatSuppressingFilter(window_seconds=0.05)
+
+    def record() -> logging.LogRecord:
+        return logging.LogRecord("slack_app", logging.ERROR, __file__, 1, "boom", None, None)
+
+    flt.filter(record())
+    for _ in range(9):
+        flt.filter(record())
+
+    time.sleep(0.06)  # window expires
+    later = record()
+    assert flt.filter(later) is True
+    assert "+9 identical suppressed" in later.getMessage()
+
+
+def test_different_messages_are_never_collapsed_together():
+    from lej_cc.config import RepeatSuppressingFilter
+
+    flt = RepeatSuppressingFilter(window_seconds=60)
+    first = logging.LogRecord("a", logging.INFO, __file__, 1, "reconnecting", None, None)
+    second = logging.LogRecord("a", logging.INFO, __file__, 1, "connected", None, None)
+    assert flt.filter(first) is True
+    assert flt.filter(second) is True
+
+
+def test_the_dedup_table_does_not_grow_without_bound():
+    from lej_cc.config import RepeatSuppressingFilter
+
+    flt = RepeatSuppressingFilter(window_seconds=0.001)
+    for i in range(700):
+        flt.filter(logging.LogRecord("a", logging.INFO, __file__, 1, f"m{i}", None, None))
+    assert len(flt._last) <= 512

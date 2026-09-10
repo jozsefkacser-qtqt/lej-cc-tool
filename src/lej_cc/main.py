@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import threading
 
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
@@ -26,7 +27,10 @@ from .tracker import Tracker
 
 def main() -> int:
     settings = Settings()  # type: ignore[call-arg]
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        repeat_window_seconds=settings.log_repeat_window_seconds,
+    )
     log = logging.getLogger("lej_cc")
 
     store = JobStore(settings.database_path)
@@ -58,8 +62,16 @@ def main() -> int:
     if active:
         log.info("resuming %d active job(s) after restart", len(active))
 
+    stopping = threading.Event()
+
     def shutdown(*_: object) -> None:
-        log.info("shutting down")
+        # A second Ctrl-C while the first shutdown is still draining threads
+        # must not start a second one.
+        if stopping.is_set():
+            log.info("already shutting down, be patient")
+            return
+        stopping.set()
+        log.info("shutting down — waiting for in-flight polls")
         scheduler.stop()
         handler.close()
         client.close()
