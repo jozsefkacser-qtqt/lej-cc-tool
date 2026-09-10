@@ -28,7 +28,10 @@ ask() {
         printf '\n%s\n  not set.\n' "$label"
     fi
 
-    read -rp "  value: " value || true
+    # -s so the value never reaches the screen, a screenshot or the scrollback.
+    # The hint matters: hidden input reads as a frozen terminal otherwise.
+    read -rsp "  paste it (nothing will appear), then press Enter: " value || true
+    printf '\n'
 
     if [[ -z "$value" ]]; then
         if [[ -n "$existing" ]]; then
@@ -72,7 +75,7 @@ PY
 }
 
 echo "Setting secrets in $(pwd)/$ENV_FILE"
-echo "Nothing you type is echoed back, and values are never printed."
+echo "Input is hidden: nothing appears as you paste. Only lengths are shown."
 
 ask SLACK_BOT_TOKEN    "Slack bot token   (OAuth & Permissions)"       "xoxb-" 40
 ask SLACK_APP_TOKEN    "Slack app token   (Basic Information)"         "xapp-" 40
