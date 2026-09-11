@@ -116,6 +116,21 @@ class Settings(BaseSettings):
     google_drive_folder_id: str = ""
     google_sheet_id: str = ""
 
+    # --- knowing whether it is alive ---
+    #: Channel for "online" / "going offline" announcements. Falls back to
+    #: the ops channel; empty means no announcements.
+    slack_status_channel: str = ""
+    #: Dead-man's-switch URL, pinged on a schedule. When the pings stop, the
+    #: service on the other end alerts. This is the only part of the health
+    #: story that survives the machine being switched off -- healthchecks.io
+    #: has a free tier that does exactly this.
+    heartbeat_url: str = ""
+    heartbeat_interval_seconds: int = 300
+
+    @property
+    def status_channel(self) -> str:
+        return self.slack_status_channel or self.slack_ops_channel
+
     status_map_path: Path | None = None
     log_level: str = "INFO"
     #: Identical log lines repeating inside this many seconds are counted

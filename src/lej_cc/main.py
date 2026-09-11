@@ -16,6 +16,7 @@ from slack_sdk.http_retry.builtin_handlers import (
 
 from .config import Settings, configure_logging
 from .emailer import EmailNotifier
+from .health import Heartbeat
 from .parser import StatusMapper
 from .portground import PortGroundClient
 from .scheduler import PollScheduler
@@ -51,7 +52,10 @@ def main() -> int:
     if email.enabled:
         log.info("email notifications on, always-to: %s", settings.email_always_to or "(none)")
     tracker = Tracker(settings, store, client, notifier, mapper, email=email)
-    scheduler = PollScheduler(store, tracker)
+    heartbeat = Heartbeat(settings.heartbeat_url, settings.heartbeat_interval_seconds)
+    if heartbeat.enabled:
+        log.info("heartbeat every %ss", settings.heartbeat_interval_seconds)
+    scheduler = PollScheduler(store, tracker, heartbeat=heartbeat)
 
     app = build_app(settings, store, scheduler)
     handler = SocketModeHandler(app, settings.slack_app_token)
@@ -61,6 +65,19 @@ def main() -> int:
     active = store.list_active()
     if active:
         log.info("resuming %d active job(s) after restart", len(active))
+
+    def announce(text: str) -> None:
+        """Tell the channel. Never let a failure here stop the bot."""
+        if not settings.status_channel:
+            return
+        try:
+            notifier.post(settings.status_channel, text=text)
+        except Exception:  # noqa: BLE001
+            log.exception("could not post the status announcement")
+
+    resumed = f", resuming {len(active)} tracked AWB(s)" if active else ""
+    announce(f":large_green_circle: *AWB Tracker is online*{resumed}.")
+    heartbeat.ping(force=True)
 
     stopping = threading.Event()
 
@@ -72,6 +89,10 @@ def main() -> int:
             return
         stopping.set()
         log.info("shutting down — waiting for in-flight polls")
+        announce(
+            ":red_circle: *AWB Tracker is going offline* — stopped on the server. "
+            "Tracked AWBs are saved and resume when it starts again."
+        )
         scheduler.stop()
         handler.close()
         client.close()

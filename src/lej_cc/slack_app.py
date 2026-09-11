@@ -13,9 +13,11 @@ import re
 from slack_bolt import Ack, App, Respond
 from slack_sdk import WebClient
 
+from . import formatting
 from .awb import extract_all, format_display, normalize
 from .config import Settings
 from .errors import AwbChecksumFailed, InvalidAwbFormat
+from .health import HEALTH
 from .scheduler import PollScheduler
 from .store import JobStore, utcnow
 
@@ -32,6 +34,7 @@ HELP = (
     "• `/awb OyTM202608137666` — booking references work too\n"
     "• `/awb 488-20744846 name@qtlogistics.eu` — and email the updates there\n"
     "• `/awb list` — what is currently being tracked in this channel\n"
+    "• `/awb status` — is the tool running, and how healthy is it\n"
     "• `/awb stop 488-20744846` — stop tracking\n"
     "• `/awb help` — this message\n\n"
     "The first check runs immediately, the next after 15 minutes, then every "
@@ -117,6 +120,18 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
         # Starting and stopping are channel events: everyone watching this
         # channel needs to know an AWB is being tracked, or has stopped being
         # tracked, without having to ask who did it. Queries stay private.
+        if verb == "status":
+            respond(
+                {
+                    "response_type": "in_channel",
+                    "text": "AWB Tracker status",
+                    "blocks": formatting.build_status_report(
+                        HEALTH, store.list_active(), settings
+                    ),
+                }
+            )
+            return
+
         if verb == "stop":
             respond(_in_channel(_stop(store, argument or "", channel, user)))
             return

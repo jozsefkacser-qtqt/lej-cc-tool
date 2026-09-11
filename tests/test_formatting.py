@@ -121,3 +121,80 @@ def test_many_resolved_mawbs_are_truncated():
     snapshot = snap(5, 10)
     snapshot.resolved_mawbs = [f"4882074484{i}" for i in range(6)]
     assert "+3 more" in str(build_status_blocks(snapshot))
+
+
+# --- /awb status --------------------------------------------------------
+
+
+def _health(**overrides):
+    from datetime import timedelta
+
+    from lej_cc.health import Health
+    from lej_cc.store import utcnow
+
+    health = Health()
+    health.started_at = utcnow() - timedelta(hours=4)
+    health.last_poll_ok_at = utcnow() - timedelta(minutes=8)
+    health.polls_ok = 41
+    for key, value in overrides.items():
+        setattr(health, key, value)
+    return health
+
+
+def _settings(tmp_path):
+    from lej_cc.config import Settings
+
+    return Settings(
+        slack_bot_token="x",
+        slack_app_token="x",
+        portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3",
+    )
+
+
+def test_status_says_it_is_online_and_for_how_long(tmp_path):
+    from lej_cc.formatting import build_status_report
+
+    text = build_status_report(_health(), [], _settings(tmp_path))[0]["text"]["text"]
+    assert "online" in text
+    assert "4h 00m" in text
+    assert "🟢" in text
+
+
+def test_status_turns_amber_when_no_check_has_succeeded_recently(tmp_path):
+    """Running but not working is a different state from running."""
+    from datetime import timedelta
+
+    from lej_cc.formatting import build_status_report
+    from lej_cc.store import utcnow
+
+    stale = _health(last_poll_ok_at=utcnow() - timedelta(hours=3))
+    text = build_status_report(stale, [], _settings(tmp_path))[0]["text"]["text"]
+    assert "🟠" in text
+
+
+def test_status_never_rounds_a_stuck_awb_up_to_100(tmp_path):
+    """The same trap as the progress bar: 99.9% is not finished."""
+    from lej_cc.formatting import build_status_report
+    from lej_cc.store import JobStore, utcnow
+
+    store = JobStore(tmp_path / "j.sqlite3")
+    job = store.create_job("93602927993", "C1", "U1")
+    store.reschedule(job.id, utcnow(), percent=99.9, cleared=1544, total=1546)
+
+    text = build_status_report(_health(), store.list_active(), _settings(tmp_path))[0][
+        "text"
+    ]["text"]
+    assert "99.9%" in text
+    assert "100%" not in text
+
+
+def test_status_surfaces_the_last_error(tmp_path):
+    from lej_cc.formatting import build_status_report
+    from lej_cc.store import utcnow
+
+    health = _health(last_poll_error="936-02927971: ApiUnavailable", polls_failed=2)
+    health.last_poll_error_at = utcnow()
+    text = build_status_report(health, [], _settings(tmp_path))[0]["text"]["text"]
+    assert "ApiUnavailable" in text
+    assert "41 ok · 2 failed" in text

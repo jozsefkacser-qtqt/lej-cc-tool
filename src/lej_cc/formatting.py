@@ -272,6 +272,51 @@ def build_status_blocks(
     return blocks
 
 
+def build_status_report(health, active_jobs: list, settings) -> list[dict]:  # noqa: ANN001
+    """The answer to `/awb status`.
+
+    Note what the absence of this message means: if the bot is down, Slack
+    answers "the app did not respond" instead. No answer is an answer.
+    """
+    last_poll = health.last_poll_ok_at
+    stale = last_poll is None or (datetime.now(LOCAL_TZ) - last_poll) > timedelta(minutes=90)
+    icon = "🟠" if stale else "🟢"
+
+    lines = [
+        f"{icon} *AWB Tracker is online* — up {_duration(health.uptime)}",
+        "",
+        f"*Tracking:* {len(active_jobs)} AWB(s)",
+    ]
+    for job in active_jobs[:10]:
+        percent = (
+            f"{job.last_percent:.1f}%" if job.last_percent is not None else "first check"
+        )
+        lines.append(f"  • `{format_display(job.mawb)}` — {percent}, next {_hhmm(job.next_run_at)}")
+    if len(active_jobs) > 10:
+        lines.append(f"  _…and {len(active_jobs) - 10} more_")
+
+    lines += [
+        "",
+        f"*Last successful check:* {_hhmm(last_poll)}" + (
+            f" ({_duration(datetime.now(LOCAL_TZ) - last_poll)} ago)"
+            if last_poll
+            else " — none yet"
+        ),
+        f"*Checks:* {health.polls_ok} ok · {health.polls_failed} failed",
+    ]
+    if health.last_api_seconds:
+        lines.append(f"*PortGround response:* {health.last_api_seconds:.0f}s last time")
+    if health.last_poll_error:
+        lines.append(
+            f"*Last error:* {health.last_poll_error} at {_hhmm(health.last_poll_error_at)}"
+        )
+    lines.append(
+        "*Email:* " + ("on" if settings.email_enabled else "off (Slack only)")
+    )
+
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
+
+
 def build_error_blocks(mawb: str, message: str, *, fatal: bool = True) -> list[dict]:
     icon = "🚫" if fatal else "⚠️"
     suffix = "" if fatal else "\n_Tracking continues; will retry at the next check._"

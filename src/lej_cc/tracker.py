@@ -7,6 +7,7 @@ cycle can be tested without a Slack workspace.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
@@ -16,6 +17,7 @@ from .awb import format_display
 from .config import Settings
 from .emailer import EmailNotifier
 from .errors import LejCcError
+from .health import HEALTH
 from .model import Snapshot, diff_snapshots
 from .parser import StatusMapper, parse_workbook
 from .portground import PortGroundClient
@@ -104,7 +106,9 @@ class Tracker:
             )
 
     def _poll(self, job: Job) -> None:
+        started = time.monotonic()
         path, server_name = self.client.download(job.mawb, self.settings.download_dir)
+        HEALTH.poll_succeeded(time.monotonic() - started)
         snapshot = parse_workbook(
             path,
             job.mawb,
@@ -284,6 +288,7 @@ class Tracker:
         from .errors import ApiUnauthorized, AwbNotFound, MawbMismatch, SchemaDrift
 
         log.warning("job %s (%s) error: %s", job.id, job.mawb, exc)
+        HEALTH.poll_failed(f"{format_display(job.mawb)}: {type(exc).__name__}")
 
         # An AWB PortGround has never heard of is reported at once rather than
         # polled for hours -- that is the case operators hit with a typo.

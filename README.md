@@ -71,6 +71,7 @@ at 10:15 stay 15 minutes apart. See `src/lej_cc/scheduler.py`.
 | `/awb 488-20744846` | Start tracking. Several numbers in one command are fine. |
 | `/awb list` | What this channel is currently tracking. |
 | `/awb stop 488-20744846` | Stop tracking. |
+| `/awb status` | Is the tool running, and is it healthy. |
 | `/awb help` | Usage. |
 | `@bot 488-20744846` | Same as `/awb`, for people who prefer mentions. |
 
@@ -79,6 +80,29 @@ Buttons on each status card: **Refresh now**, **Stop tracking**.
 Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
+
+## Knowing whether it is running
+
+A process cannot report its own death, so this is three separate things.
+
+**It announces itself.** On startup it posts to `SLACK_STATUS_CHANNEL`
+(falling back to `SLACK_OPS_CHANNEL`), saying how many AWBs it resumed. On
+a clean stop it says it is going offline. That covers restarts and planned
+stops -- not a crash, and not the power going out.
+
+**Anyone can ask.** `/awb status` reports uptime, what is being tracked,
+when the last check succeeded, how many have failed, the last error and the
+last PortGround response time. It goes amber when nothing has succeeded for
+90 minutes, because running and working are different states. And if the
+bot is down, Slack answers *"the app did not respond"* -- no answer is an
+answer.
+
+**Something outside watches.** `HEARTBEAT_URL` is pinged on a schedule; when
+the pings stop, the service on the other end alerts you. This is the only
+part that survives the machine being switched off, which on a desktop is
+the most likely way it dies. [healthchecks.io](https://healthchecks.io) has
+a free tier that does exactly this: create a check, set the period to twice
+`HEARTBEAT_INTERVAL_SECONDS`, and point it at your Slack.
 
 ## Email notifications
 

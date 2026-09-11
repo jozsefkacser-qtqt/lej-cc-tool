@@ -13,6 +13,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from .health import HEALTH, Heartbeat
 from .maintenance import purge_old_downloads
 from .store import JobStore
 from .tracker import Tracker
@@ -28,9 +29,11 @@ class PollScheduler:
         *,
         tick_seconds: int = 30,
         max_parallel: int = 8,
+        heartbeat: Heartbeat | None = None,
     ) -> None:
         self.store = store
         self.tracker = tracker
+        self.heartbeat = heartbeat
         self.tick_seconds = tick_seconds
         self.max_parallel = max_parallel
         self._stop = threading.Event()
@@ -51,6 +54,9 @@ class PollScheduler:
 
     def tick(self) -> int:
         """Run one round of due jobs. Returns how many were polled."""
+        HEALTH.tick()
+        if self.heartbeat:
+            self.heartbeat.ping()
         jobs = self.store.claim_due(limit=self.max_parallel * 2)
         if not jobs:
             return 0
