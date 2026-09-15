@@ -18,6 +18,7 @@ from . import version
 from .config import Settings, configure_logging
 from .emailer import EmailNotifier
 from .health import Heartbeat
+from .inbox import EmailTrigger
 from .parser import StatusMapper
 from .portground import PortGroundClient
 from .scheduler import PollScheduler
@@ -60,7 +61,27 @@ def main() -> int:
     heartbeat = Heartbeat(settings.heartbeat_url, settings.heartbeat_interval_seconds)
     if heartbeat.enabled:
         log.info("heartbeat every %ss", settings.heartbeat_interval_seconds)
-    scheduler = PollScheduler(store, tracker, heartbeat=heartbeat)
+    inbox = EmailTrigger(settings, store, emailer=email)
+    misconfigured = inbox.why_disabled()
+    if misconfigured:
+        # Loud, because the mailbox is configured and mail arriving in it
+        # will sit there unanswered until someone reads this line.
+        log.error("%s", misconfigured)
+    elif inbox.enabled:
+        log.info(
+            "email trigger on: %s@%s, senders %s -> %s",
+            settings.imap_user,
+            settings.imap_host,
+            settings.imap_allowed_senders,
+            settings.email_target_channel,
+        )
+    scheduler = PollScheduler(
+        store,
+        tracker,
+        heartbeat=heartbeat,
+        inbox=inbox,
+        inbox_seconds=settings.imap_poll_seconds,
+    )
 
     running_version = version.current()
     log.info("running %s", running_version)

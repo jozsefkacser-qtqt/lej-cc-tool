@@ -1,12 +1,13 @@
 # Audit and roadmap
 
 State as of 2026-09-15: running in production on WSL, tracking live AWBs
-and booking references, 178 tests, CI green.
+and booking references, 245 tests, CI green.
 
 **Shipped since the audit:** email notifications, the escalation rule,
 online/offline reporting with a heartbeat, running-version visibility,
-booking-reference support, the chase sheet, and one row per AWB in a Google
-Sheet. What follows is what is left.
+booking-reference support, the chase sheet, one row per AWB in a Google
+Sheet, the completion forecast, lead-time analytics, and starting a check by
+email. What follows is what is left.
 
 ---
 
@@ -72,7 +73,22 @@ per channel or globally (`EMAIL_ALWAYS_CC`).
 
 Effort: about a day, including the HTML template.
 
-## 2b. Email in — start a check by email
+## 2b. Email in — start a check by email — **DONE**
+
+Built as designed below, in `src/lej_cc/inbox.py`, with every security rule
+enforced and tested. Two things landed differently from this plan:
+
+* **The `Destination` refactor was not needed.** An email-started job posts
+  to `IMAP_TARGET_CHANNEL` and mails the requester, which the existing
+  `channel_id` + `email_to` columns already express. Introducing a
+  destination abstraction to model two destinations would have been
+  scaffolding, not structure.
+* **References are read from the subject line**, not only from a slash
+  command. The subject is as deliberate an act as typing a command, and
+  without it a reference could not be mailed in at all. Bodies are still
+  scanned for checksum-valid AWBs only, and the quoted history in a reply is
+  cut off before anything is read, so answering "thanks" to an update does
+  not restart the whole thread.
 
 **Transport options considered:**
 
@@ -137,7 +153,7 @@ actually worth.
 
 | Idea | Size | Value |
 |---|---|---|
-| **Email trigger** (Part 2b) | 1.5 days | **Requested — next up.** Needs a mailbox named. |
+| ~~Email trigger~~ (Part 2b) | — | **Done** — allowlist mandatory, SPF/DKIM required, dedup + rate limit. Needs a mailbox named to switch on. |
 | Auto-detect AWBs posted in a dedicated channel | 2 h | **High.** Zero friction; the code exists, it is switched off. |
 | Bulk: paste or upload a list of AWBs | half a day | Medium — useful for a flight's worth at once |
 | Standing AWBs: track every AWB on a route automatically | 1 day | Medium, needs a source of "which AWBs" |
@@ -160,8 +176,8 @@ data, and it accumulates whether or not anyone builds on it.
 
 | Idea | Size | Value |
 |---|---|---|
-| Lead-time report: distribution of check-in → cleared | half a day | **High** |
-| **Completion forecast** on the card: "100% expected ~17:40" | half a day | **High.** Turns a status into a decision. |
+| ~~Lead-time report: distribution of check-in → cleared~~ | — | **Done** — `/awb stats`, refuses to average below 3 AWBs |
+| ~~**Completion forecast** on the card~~ | — | **Done** — least squares over 6 h, returns nothing rather than a guess |
 | Which HAWBs / consignees habitually block | 1 day | High |
 | Per-airline, per-broker clearance performance | 1 day | High — supplier conversations with evidence |
 | Anomaly alert: this AWB is slower than its peers | 1 day | Medium |
@@ -200,17 +216,20 @@ Recording these so they are not re-litigated or quietly widened.
 
 # Recommended order
 
-1. **Oracle VM + systemd** — the last thing standing between this and
+1. **A real server + systemd** — the last thing standing between this and
    something colleagues can rely on without anyone nursing it. WSL has now
    cost sleep interruptions, DNS failures and manual restarts; none of them
-   are bugs in the tool and none of them happen on a server.
-2. **Email trigger** — requested, with the sender allowlist non-optional.
-3. **Completion forecast** — the smallest change with the largest effect on
-   how the tool is used: a status becomes a decision.
-4. **Lead-time analytics** — the snapshots table now keeps clearance
-   timestamps, so the history is accumulating whether or not anyone reads it.
+   are bugs in the tool and none of them happen on a server. Now planned on
+   the local server rather than an Oracle VM; `deploy/lej-cc-tool.service`
+   applies either way.
+2. ~~Email trigger~~ — **done.** Needs a shared mailbox named and its
+   credentials set to switch on.
+3. ~~Completion forecast~~ — **done.**
+4. ~~Lead-time analytics~~ — **done** (`/awb stats`).
 5. **Drive archive** of every export — cheap, and the audit trail this
    process should have had from day one.
+6. **Auto-detect AWBs in a dedicated channel** — the code exists and is
+   switched off; two hours and the friction reaches zero.
 
-Item 1 is half a day. Items 3–5 are what turn this from a notifier into
-something with its own value.
+Item 1 is half a day and is now the only thing on this list that changes
+how reliable the tool is. The rest change how much it is worth.

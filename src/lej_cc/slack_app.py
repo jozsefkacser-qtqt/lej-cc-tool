@@ -52,6 +52,13 @@ def build_app(
 ) -> App:
     app = App(token=settings.slack_bot_token, logger=log)
 
+    help_text = HELP
+    if settings.imap_enabled:
+        help_text += (
+            f"\n\nYou can also *email* `{settings.imap_user}` with the number in "
+            "the subject line — updates come back in that mail thread."
+        )
+
     def start_tracking(
         mawb: str, channel: str, user: str | None, email_to: str | None = None
     ) -> str:
@@ -103,7 +110,7 @@ def build_app(
         user = command.get("user_id")
 
         if not text or text.lower() in {"help", "-h", "?"}:
-            respond(HELP)
+            respond(help_text)
             return
 
         verb, _, argument = text.partition(" ")
@@ -198,7 +205,7 @@ def build_app(
     def on_mention(event: dict, say) -> None:  # noqa: ANN001
         numbers = extract_all(event.get("text", ""))
         if not numbers:
-            say(text=HELP, thread_ts=event.get("thread_ts"))
+            say(text=help_text, thread_ts=event.get("thread_ts"))
             return
         emails = ",".join(
             a for a in EMAIL_RE.findall(event.get("text", "")) if settings.email_allowed(a)

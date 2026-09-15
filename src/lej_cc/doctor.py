@@ -156,6 +156,58 @@ def check_email(settings) -> Result:  # noqa: ANN001
     )
 
 
+def check_inbox(settings) -> Result:  # noqa: ANN001
+    """Log in to the mailbox and select the folder. Reads nothing."""
+    import imaplib
+
+    from .inbox import why_disabled
+
+    if not settings.imap_host and not settings.imap_user:
+        return Result("email trigger", OK, "not configured (IMAP_HOST empty)")
+
+    # Misconfiguration first: a mailbox that logs in fine but whose mail is
+    # refused or unanswerable is the failure people find hardest to see.
+    reason = why_disabled(settings)
+    if reason:
+        return Result("email trigger", FAIL, reason)
+
+    detail = f"{settings.imap_user}@{settings.imap_host}:{settings.imap_port}"
+    try:
+        conn = imaplib.IMAP4_SSL(settings.imap_host, settings.imap_port)
+        try:
+            conn.login(settings.imap_user, settings.imap_password)
+            typ, _ = conn.select(settings.imap_folder, readonly=True)
+            if typ != "OK":
+                return Result(
+                    "email trigger", FAIL, f"{detail} — no folder named {settings.imap_folder!r}"
+                )
+        finally:
+            conn.logout()
+    except imaplib.IMAP4.error as exc:
+        return Result(
+            "email trigger",
+            FAIL,
+            f"{detail} — login rejected ({exc}). With Google Workspace this "
+            "needs an app password and IMAP switched on in Gmail settings.",
+        )
+    except Exception as exc:  # noqa: BLE001 - network, DNS, TLS
+        return Result("email trigger", FAIL, f"{detail} — {exc}")
+
+    who = settings.imap_allowed_senders
+    if not settings.email_enabled:
+        return Result(
+            "email trigger",
+            WARN,
+            f"{detail} — mail would start checks, but SMTP is off so nobody "
+            "gets an answer. Set SMTP_HOST to complete the round trip.",
+        )
+    return Result(
+        "email trigger",
+        OK,
+        f"{detail}, from {who} -> {settings.email_target_channel}",
+    )
+
+
 def check_slack(settings) -> Result:  # noqa: ANN001
     from slack_sdk import WebClient
     from slack_sdk.errors import SlackApiError
@@ -236,6 +288,7 @@ def run(mawb: str = SAMPLE_MAWB, *, offline: bool = False) -> list[Result]:
 
     results.append(check_slack(settings))
     results.append(check_email(settings))
+    results.append(check_inbox(settings))
     results.append(check_portground(settings, mawb))
     return results
 

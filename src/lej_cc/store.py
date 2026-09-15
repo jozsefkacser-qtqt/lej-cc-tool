@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS snapshots (
     percent      REAL    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_job ON snapshots (job_id, taken_at);
+
+-- Message-IDs already acted on. A resent or re-delivered mail must not
+-- start a second job for the same request.
+CREATE TABLE IF NOT EXISTS processed_emails (
+    message_id TEXT PRIMARY KEY,
+    sender     TEXT NOT NULL,
+    seen_at    TEXT NOT NULL,
+    outcome    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_processed_sender ON processed_emails (sender, seen_at);
 """
 
 #: Columns added after the first release. Applied to existing databases by
@@ -422,6 +432,45 @@ class JobStore:
                 "SELECT * FROM snapshots WHERE job_id = ? ORDER BY id DESC LIMIT 1",
                 (job_id,),
             ).fetchone()
+
+    # --- inbound email --------------------------------------------------
+
+    def email_already_handled(self, message_id: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM processed_emails WHERE message_id = ?", (message_id,)
+            ).fetchone()
+        return row is not None
+
+    def record_email(self, message_id: str, sender: str, outcome: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO processed_emails (message_id, sender, seen_at,"
+                " outcome) VALUES (?,?,?,?)",
+                (message_id, sender.lower(), _iso(utcnow()), outcome),
+            )
+
+    def emails_from(
+        self,
+        sender: str,
+        since: datetime,
+        outcomes: tuple[str, ...] | None = None,
+    ) -> int:
+        """How many mails from this sender were acted on since `since`.
+
+        `outcomes` narrows the count to particular results. The rate limiter
+        passes ("tracked",) deliberately: refusals cost nothing, so counting
+        them would let one over-limit hour keep a legitimate sender locked
+        out for as long as they kept writing.
+        """
+        sql = "SELECT COUNT(*) FROM processed_emails WHERE sender = ? AND seen_at >= ?"
+        params: list = [sender.lower(), _iso(since)]
+        if outcomes:
+            sql += f" AND outcome IN ({','.join('?' * len(outcomes))})"
+            params.extend(outcomes)
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return row[0] if row else 0
 
     def recent_snapshots(self, job_id: int, since: datetime):  # noqa: ANN201
         """Snapshots for a job taken since `since`, oldest first."""

@@ -276,6 +276,57 @@ dedicated account -- the account password will not work with 2FA on.
 `lej-cc-doctor` connects and authenticates without sending anything, so you
 can verify the credentials before the first AWB depends on them.
 
+## Starting a check by email
+
+Off until a mailbox is configured, and off even then unless
+`IMAP_ALLOWED_SENDERS` names who may use it. Mail the mailbox with the
+number in the subject and the bot starts tracking and replies:
+
+```
+To:      awb@qtlogistics.eu
+Subject: 488-20744846
+```
+
+Booking references work the same way: `Subject: OyTM202608137666`. The job
+is posted to `IMAP_TARGET_CHANNEL` as well, so the team sees it, and every
+later update mails back **inside the original thread** -- the requester gets
+one conversation, not a pile of near-identical messages.
+
+### The rules it will not bend
+
+A mailbox is an open door: anyone who can forge a `From` header can knock,
+and what comes back out carries invoice numbers and MRNs.
+
+| Rule | Why |
+|---|---|
+| `IMAP_ALLOWED_SENDERS` is **mandatory** | Empty disables the trigger. There is no default-open mode. |
+| SPF or DKIM must have passed | Read from `Authentication-Results`. A message with no such header is refused too -- turn `IMAP_REQUIRE_AUTHENTICATION=false` off only if your server writes none. |
+| Replies go only to the verified sender | Never to `Reply-To`, never to an address in the body. Somebody who gets a message through must not be able to redirect the answer. |
+| A refused mail gets no bounce | Explaining the refusal explains how to get past it, and mailing an address that never wrote to us makes this a spam relay. |
+| Deduplicated on `Message-ID` | Re-delivery, or mail moved back into the folder, cannot start the same job twice. |
+| `IMAP_MAX_PER_SENDER_HOURLY` | Each accepted mail is a multi-minute export. Refusals do not count towards it, so one noisy hour cannot lock out a real sender. |
+| Robots are never answered | Auto-replies, list mail and our own address are skipped, and every mail this bot sends is marked `Auto-Submitted`, so an out-of-office cannot start a loop. |
+
+### Where it looks for the number
+
+A checksum-valid AWB is safe to recognise anywhere, so the subject **and**
+the body are scanned for those -- and the quoted history in a reply is cut
+off first, so answering "thanks" to an update does not restart everything
+underneath it.
+
+Anything without a checksum to lean on is only read from the **subject**,
+where writing it is a deliberate act: booking references, and AWB-shaped
+numbers that fail the check digit (so the sender is told they have a typo
+rather than that nothing was found). At most ten identifiers per mail.
+
+### Setting up the mailbox
+
+A dedicated shared mailbox, not a person's account. With Workspace:
+`imap.gmail.com:993`, IMAP enabled in the Gmail settings, and an **app
+password**. `IMAP_PROCESSED_FOLDER` files handled mail out of the inbox;
+leave it empty to mark it read in place. `lej-cc-doctor` logs in, selects
+the folder read-only and reports what would happen to an arriving mail.
+
 ## Attachments
 
 Each update carries two files:

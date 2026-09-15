@@ -14,6 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .health import HEALTH, Heartbeat
+from .inbox import EmailTrigger
 from .maintenance import purge_old_downloads
 from .store import JobStore
 from .tracker import Tracker
@@ -30,14 +31,22 @@ class PollScheduler:
         tick_seconds: int = 30,
         max_parallel: int = 8,
         heartbeat: Heartbeat | None = None,
+        inbox: EmailTrigger | None = None,
+        inbox_seconds: int = 60,
     ) -> None:
         self.store = store
         self.tracker = tracker
         self.heartbeat = heartbeat
         self.tick_seconds = tick_seconds
         self.max_parallel = max_parallel
+        # The mailbox gets its own thread rather than a slot in the tick: an
+        # IMAP server that stops answering would otherwise stall the polling
+        # of AWBs somebody is waiting on.
+        self.inbox = inbox
+        self.inbox_seconds = max(15, inbox_seconds)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._inbox_thread: threading.Thread | None = None
         self._last_housekeeping = 0.0
 
     def start(self) -> None:
@@ -46,11 +55,19 @@ class PollScheduler:
         self._thread = threading.Thread(target=self._run, name="poll-scheduler", daemon=True)
         self._thread.start()
         log.info("scheduler started (tick=%ss, parallel=%s)", self.tick_seconds, self.max_parallel)
+        if self.inbox and self.inbox.enabled:
+            self._inbox_thread = threading.Thread(
+                target=self._run_inbox, name="inbox-poller", daemon=True
+            )
+            self._inbox_thread.start()
+            log.info("email trigger started (every %ss)", self.inbox_seconds)
 
     def stop(self) -> None:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=10)
+        if self._inbox_thread:
+            self._inbox_thread.join(timeout=10)
 
     def tick(self) -> int:
         """Run one round of due jobs. Returns how many were polled."""
@@ -89,6 +106,15 @@ class PollScheduler:
         settings = self.tracker.settings
         purge_old_downloads(settings.download_dir, settings.download_retention_days)
 
+    def poll_inbox(self) -> None:
+        """One pass over the mailbox. Nudges the tick if anything started."""
+        if not self.inbox:
+            return
+        result = self.inbox.poll()
+        HEALTH.inbox_polled(result.accepted, result.refused)
+        if result.accepted:
+            self.nudge()
+
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
@@ -97,3 +123,11 @@ class PollScheduler:
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 log.exception("scheduler tick failed")
             self._stop.wait(self.tick_seconds)
+
+    def _run_inbox(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.poll_inbox()
+            except Exception:  # noqa: BLE001 - a bad mailbox must not end the loop
+                log.exception("inbox poll failed")
+            self._stop.wait(self.inbox_seconds)

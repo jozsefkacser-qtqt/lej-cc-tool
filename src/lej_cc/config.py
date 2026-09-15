@@ -119,6 +119,63 @@ class Settings(BaseSettings):
     #: exclusively -- the hand-maintained tabs are never touched.
     google_sheet_tab: str = "CC_BOT"
 
+    # --- inbound email: start a check by mailing a shared mailbox ---
+    #: Leave imap_host empty to keep the trigger off. It is off by default.
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_password: str = ""
+    imap_folder: str = "INBOX"
+    #: Where handled mail is moved. Empty leaves it in place, marked read.
+    imap_processed_folder: str = ""
+    imap_poll_seconds: int = 60
+    #: Addresses or domains permitted to start a check. **Not optional**:
+    #: email is trivially spoofable and a reply carries customs data, so an
+    #: empty list disables the trigger rather than allowing everyone.
+    imap_allowed_senders: str = ""
+    #: Require SPF/DKIM to have passed, read from Authentication-Results.
+    #: Only turn this off if your mail server does not add that header.
+    imap_require_authentication: bool = True
+    #: Most mails one sender can start per hour.
+    imap_max_per_sender_hourly: int = 20
+    #: Slack channel that email-triggered AWBs are posted to, so the team
+    #: sees them too. Falls back to the status channel.
+    imap_target_channel: str = ""
+
+    @property
+    def imap_enabled(self) -> bool:
+        return bool(self.imap_host and self.imap_user and self.allowed_senders)
+
+    @property
+    def allowed_senders(self) -> list[str]:
+        return [
+            s.strip().lower()
+            for s in self.imap_allowed_senders.split(",")
+            if s.strip()
+        ]
+
+    @property
+    def email_target_channel(self) -> str:
+        return self.imap_target_channel or self.status_channel
+
+    def sender_allowed(self, address: str) -> bool:
+        """True if `address` may start a check.
+
+        Matches a full address or a domain. Subdomains of an allowed domain
+        pass; a domain merely ending with the same letters does not.
+        """
+        address = address.strip().lower()
+        if not address or not self.allowed_senders:
+            return False
+        domain = address.rsplit("@", 1)[-1]
+        for allowed in self.allowed_senders:
+            if "@" in allowed:
+                if address == allowed:
+                    return True
+            elif domain == allowed or domain.endswith("." + allowed):
+                return True
+        return False
+
     # --- escalation ---
     #: Shout when an AWB has not advanced for this long and is not finished.
     #: 0 disables. Measured from the last shipment that cleared, not from the

@@ -80,6 +80,9 @@ echo "Input is hidden: nothing appears as you paste. Only lengths are shown."
 ask SLACK_BOT_TOKEN    "Slack bot token   (OAuth & Permissions)"       "xoxb-" 40
 ask SLACK_APP_TOKEN    "Slack app token   (Basic Information)"         "xapp-" 40
 ask PORTGROUND_API_KEY "PortGround API key (from the PortGround mail)" ""      32
+# Both optional: press Enter to skip if email is not switched on.
+ask SMTP_PASSWORD      "SMTP password     (optional — Enter to skip)"   ""      8
+ask IMAP_PASSWORD      "Mailbox password  (optional — Enter to skip)"   ""      8
 
 echo
 echo "Current .env (values shown only as lengths):"

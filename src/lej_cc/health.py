@@ -33,6 +33,10 @@ class Health:
     polls_ok: int = 0
     polls_failed: int = 0
     last_api_seconds: float | None = None
+    #: Inbound email trigger, when it is switched on.
+    last_inbox_poll_at: datetime | None = None
+    emails_accepted: int = 0
+    emails_refused: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def tick(self) -> None:
@@ -51,6 +55,12 @@ class Health:
             self.last_poll_error = reason
             self.last_poll_error_at = utcnow()
             self.polls_failed += 1
+
+    def inbox_polled(self, accepted: int = 0, refused: int = 0) -> None:
+        with self._lock:
+            self.last_inbox_poll_at = utcnow()
+            self.emails_accepted += accepted
+            self.emails_refused += refused
 
     @property
     def uptime(self) -> timedelta:

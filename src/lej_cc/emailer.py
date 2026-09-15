@@ -251,6 +251,9 @@ class EmailNotifier:
 
         message_id = make_msgid(domain=self.settings.email_from.split("@")[-1] or None)
         message["Message-ID"] = message_id
+        # Stops a well-behaved out-of-office from answering us, which with an
+        # inbound trigger switched on would otherwise be a loop.
+        message["Auto-Submitted"] = "auto-generated"
         # Later mails point at the first one, so clients collapse them into a
         # single conversation instead of an inbox full of near-identical mails.
         if job.email_message_id:
@@ -284,6 +287,7 @@ class EmailNotifier:
         message["Message-ID"] = make_msgid(
             domain=self.settings.email_from.split("@")[-1] or None
         )
+        message["Auto-Submitted"] = "auto-generated"
         if job.email_message_id:
             message["In-Reply-To"] = job.email_message_id
             message["References"] = job.email_message_id
@@ -291,6 +295,41 @@ class EmailNotifier:
         prefix = "Tracking has stopped" if fatal else "A check failed"
         message.set_content(f"MAWB {mawb}\n\n{prefix}: {text}\n")
         self._send(message, recipients)
+
+    def send_notice(
+        self,
+        to: str,
+        subject: str,
+        text: str,
+        *,
+        in_reply_to: str | None = None,
+    ) -> bool:
+        """A plain-text mail to one address. Used to answer the email trigger.
+
+        Deliberately has no attachments and no HTML: it acknowledges a
+        request, and the real content follows as a normal update.
+        """
+        if not self.enabled or not to:
+            return False
+        if not self.settings.email_allowed(to):
+            log.warning("refusing to mail %s: outside the allowed domains", to)
+            return False
+
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = formataddr(("LEJ customs tracker", self.settings.email_from))
+        message["To"] = to
+        message["Message-ID"] = make_msgid(
+            domain=self.settings.email_from.split("@")[-1] or None
+        )
+        # auto-replied, not auto-generated: this one *is* an answer to a
+        # message, and the distinction is what stops two robots talking.
+        message["Auto-Submitted"] = "auto-replied"
+        if in_reply_to:
+            message["In-Reply-To"] = in_reply_to
+            message["References"] = in_reply_to
+        message.set_content(text)
+        return self._send(message, [to])
 
     def _attach(self, message: EmailMessage, path: Path) -> None:
         try:
