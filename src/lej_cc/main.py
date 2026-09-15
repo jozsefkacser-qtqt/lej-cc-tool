@@ -21,6 +21,7 @@ from .health import Heartbeat
 from .parser import StatusMapper
 from .portground import PortGroundClient
 from .scheduler import PollScheduler
+from .sheets import SheetExporter
 from .slack_app import build_app
 from .slack_io import SlackNotifier
 from .store import JobStore
@@ -52,7 +53,10 @@ def main() -> int:
     email = EmailNotifier(settings)
     if email.enabled:
         log.info("email notifications on, always-to: %s", settings.email_always_to or "(none)")
-    tracker = Tracker(settings, store, client, notifier, mapper, email=email)
+    sheet = SheetExporter(settings)
+    if sheet.enabled:
+        log.info("sheet export on, tab %r", settings.google_sheet_tab)
+    tracker = Tracker(settings, store, client, notifier, mapper, email=email, sheet=sheet)
     heartbeat = Heartbeat(settings.heartbeat_url, settings.heartbeat_interval_seconds)
     if heartbeat.enabled:
         log.info("heartbeat every %ss", settings.heartbeat_interval_seconds)

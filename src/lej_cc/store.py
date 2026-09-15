@@ -78,6 +78,11 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # needs someone now.
     ("jobs", "last_progress_at", "TEXT"),
     ("jobs", "escalated_at", "TEXT"),
+    # Clearance timestamps were computed on every poll and thrown away. They
+    # are what "CC Completed" means in the report, and what any lead-time
+    # analysis will be built from.
+    ("snapshots", "first_clearance", "TEXT"),
+    ("snapshots", "last_clearance", "TEXT"),
 )
 
 
@@ -390,8 +395,9 @@ class JobStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO snapshots (job_id, mawb, taken_at, generated_at, total, cleared,"
-                " not_cleared, other, items_total, items_cleared, percent)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " not_cleared, other, items_total, items_cleared, percent,"
+                " first_clearance, last_clearance)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     job_id,
                     snapshot.mawb,
@@ -404,5 +410,21 @@ class JobStore:
                     snapshot.items_total,
                     snapshot.items_cleared,
                     snapshot.percent,
+                    _iso(snapshot.first_clearance),
+                    _iso(snapshot.last_clearance),
                 ),
             )
+
+    def latest_snapshot(self, job_id: int):  # noqa: ANN201 - a sqlite3.Row
+        """The most recent recorded snapshot for a job, or None."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM snapshots WHERE job_id = ? ORDER BY id DESC LIMIT 1",
+                (job_id,),
+            ).fetchone()
+
+    def list_all_jobs(self) -> list[Job]:
+        """Every job ever tracked, oldest first. Used by the sheet backfill."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
+        return [Job.from_row(r) for r in rows]

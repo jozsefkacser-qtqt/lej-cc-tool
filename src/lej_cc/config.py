@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     google_credentials_file: Path | None = None
     google_drive_folder_id: str = ""
     google_sheet_id: str = ""
+    #: The tab the bot owns. It is created on first use and written to
+    #: exclusively -- the hand-maintained tabs are never touched.
+    google_sheet_tab: str = "CC_BOT"
 
     # --- escalation ---
     #: Shout when an AWB has not advanced for this long and is not finished.

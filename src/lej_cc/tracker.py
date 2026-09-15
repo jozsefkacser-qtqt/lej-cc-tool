@@ -25,6 +25,7 @@ from .report import (
     build_open_shipments_workbook,
     open_shipments_filename,
 )
+from .sheets import SheetExporter, build_row
 from .store import Job, JobStore, utcnow
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class Tracker:
         notifier: Notifier,
         mapper: StatusMapper | None = None,
         email: EmailNotifier | None = None,
+        sheet: SheetExporter | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -71,6 +73,7 @@ class Tracker:
         self.notifier = notifier
         self.mapper = mapper or StatusMapper.load(settings.status_map_path)
         self.email = email
+        self.sheet = sheet
 
     # --- scheduling policy ---------------------------------------------
 
@@ -119,6 +122,7 @@ class Tracker:
 
         diff = diff_snapshots(job.last_status_map, snapshot)
         self.store.record_snapshot(job.id, snapshot)
+        self._write_sheet_row(job, snapshot)
 
         timed_out = job.age() > timedelta(hours=self.settings.max_tracking_hours)
         is_final = snapshot.is_complete or timed_out
@@ -277,6 +281,18 @@ class Tracker:
         self._email_update(
             job, snapshot, diff, next_run_at, is_final=is_final, attachments=attachments
         )
+
+    def _write_sheet_row(self, job: Job, snapshot: Snapshot | None = None) -> None:
+        """Keep the AWB's line in the Google Sheet current.
+
+        Fire and forget: the sheet is a convenience, Slack has already
+        carried the update and SQLite is the record of what happened.
+        """
+        if self.sheet is None or not self.sheet.enabled:
+            return
+        # Re-read the job so the row carries the counters this poll just set.
+        current = self.store.get(job.id) or job
+        self.sheet.upsert(build_row(current, snapshot))
 
     def _build_chase_sheet(self, job: Job, snapshot: Snapshot) -> Path | None:
         try:

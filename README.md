@@ -81,6 +81,52 @@ Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
 
+## One row per AWB in a Google Sheet
+
+Optional, off until `GOOGLE_SHEET_ID` and `GOOGLE_CREDENTIALS_FILE` are
+set. Every poll keeps that AWB's line current: shipment counts, percent,
+first and last clearance, how long clearance took, checks, state, who asked
+for it.
+
+**It writes only to its own tab** (`GOOGLE_SHEET_TAB`, default `CC_BOT`),
+created on first use. *Daily Report_LEJ* carries hundreds of rows, merged
+headers, formulas and an SLA chain that people edit by hand; a bot
+inferring column positions and writing into that is one offset away from
+corrupting a live operational document. Pull the values into the report
+instead:
+
+```
+=IFERROR(VLOOKUP($A2, CC_BOT!$A:$V, 14, FALSE), "")
+```
+
+Column 14 is **CC Completed** -- the same milestone the report's SLA chain
+already has a slot for, which is the point of the whole exercise. The AWB
+is written as `936-02927993`, matching the report's own format, so the
+lookup needs no massaging.
+
+`CC Completed` is only filled once **everything** has cleared. A timestamp
+there while shipments are still open would be a false milestone, and the
+SLA calculation downstream would believe it.
+
+### Setup
+
+1. Google Cloud console → create a service account → create a JSON key
+2. Save the key on the server, e.g. `secrets/service-account.json`
+3. **Share the spreadsheet with the service account's email address, as
+   Editor** -- this is the step people miss
+4. Put the id and the key path in `.env`, restart
+
+### Backfilling
+
+The live path keeps rows current as it polls. To write everything the bot
+already knows -- AWBs tracked before the export existed, or to put the tab
+back after someone edits it:
+
+```bash
+lej-cc-sheet-sync --dry-run   # print the rows, write nothing
+lej-cc-sheet-sync             # write them
+```
+
 ## Escalation
 
 An AWB that stops moving is the case a status bot is worst at: it says
