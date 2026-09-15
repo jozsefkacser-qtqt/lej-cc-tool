@@ -239,7 +239,9 @@ def build_status_blocks(
     if next_run_at and not done and not is_final:
         context.append(f"next check {_hhmm(next_run_at)}")
     if poll_count:
-        context.append(f"check #{poll_count}")
+        # No leading "#": Slack treats #something as a channel reference and
+        # renders "check #1" as "check 🔒Private channel".
+        context.append(f"poll {poll_count}")
     if requested_by:
         context.append(f"by <@{requested_by}>")
     if context:
@@ -273,6 +275,20 @@ def build_status_blocks(
     return blocks
 
 
+def _looks_unhealthy(health, active_jobs: list) -> bool:  # noqa: ANN001
+    """Amber means "running but not working".
+
+    With nothing being tracked there is nothing to poll, so no successful
+    poll is the correct state rather than a warning. And a bot that started
+    a minute ago has not had time yet.
+    """
+    if not active_jobs:
+        return False
+    if health.last_poll_ok_at is None:
+        return health.uptime > timedelta(minutes=10)
+    return (datetime.now(LOCAL_TZ) - health.last_poll_ok_at) > timedelta(minutes=90)
+
+
 def build_status_report(
     health, active_jobs: list, settings, running_version=None
 ) -> list[dict]:  # noqa: ANN001
@@ -282,8 +298,7 @@ def build_status_report(
     answers "the app did not respond" instead. No answer is an answer.
     """
     last_poll = health.last_poll_ok_at
-    stale = last_poll is None or (datetime.now(LOCAL_TZ) - last_poll) > timedelta(minutes=90)
-    icon = "🟠" if stale else "🟢"
+    icon = "🟠" if _looks_unhealthy(health, active_jobs) else "🟢"
 
     lines = [
         f"{icon} *AWB Tracker is online* — up {_duration(health.uptime)}",

@@ -224,7 +224,10 @@ def parse_workbook(
             if tracking_a_mawb and row_mawb and row_mawb != expected_mawb:
                 foreign_mawbs.add(row_mawb)
                 continue
-            if row_mawb:
+            # Only worth recording when it differs from what was asked for:
+            # the export puts a booking reference in this column too, and
+            # "reference X resolved to X" tells nobody anything.
+            if row_mawb and row_mawb.casefold() != expected_mawb.casefold():
                 seen_mawbs.add(row_mawb)
 
             raw_status = _clean(cell(row, COL_FINAL_STATUS))

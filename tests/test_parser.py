@@ -154,3 +154,24 @@ def test_a_mawb_request_reports_no_resolved_numbers(data_dir):
     is not a question a waybill request asks."""
     snap = parse_workbook(data_dir / "all_cleared.xlsx", "48820744846")
     assert snap.resolved_mawbs == []
+
+
+def test_a_reference_that_resolves_to_itself_is_not_reported(data_dir, tmp_path):
+    """The export carries the booking reference in its MAWB column, so the
+    card said "MAWB OyTM202608137666" about OyTM202608137666."""
+    import openpyxl
+
+    from tests.make_fixtures import HEADER, _row
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Worksheet"
+    sheet.append(HEADER)
+    for i in range(3):
+        sheet.append(_row(i, REFERENCE, "cleared"))
+    path = tmp_path / "self_referencing.xlsx"
+    workbook.save(path)
+
+    snap = parse_workbook(path, REFERENCE)
+    assert snap.total == 3
+    assert snap.resolved_mawbs == []

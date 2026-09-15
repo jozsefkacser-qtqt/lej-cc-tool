@@ -161,16 +161,47 @@ def test_status_says_it_is_online_and_for_how_long(tmp_path):
     assert "🟢" in text
 
 
-def test_status_turns_amber_when_no_check_has_succeeded_recently(tmp_path):
+def test_status_turns_amber_when_tracked_awbs_are_not_being_polled(tmp_path):
     """Running but not working is a different state from running."""
     from datetime import timedelta
 
     from lej_cc.formatting import build_status_report
-    from lej_cc.store import utcnow
+    from lej_cc.store import JobStore, utcnow
+
+    store = JobStore(tmp_path / "j.sqlite3")
+    store.create_job("93602927993", "C1", "U1")
 
     stale = _health(last_poll_ok_at=utcnow() - timedelta(hours=3))
-    text = build_status_report(stale, [], _settings(tmp_path))[0]["text"]["text"]
+    text = build_status_report(stale, store.list_active(), _settings(tmp_path))[0]["text"][
+        "text"
+    ]
     assert "🟠" in text
+
+
+def test_status_is_green_when_there_is_simply_nothing_to_track(tmp_path):
+    """Nothing to poll is not a failure to poll. A freshly started bot with
+    no AWBs showed amber, which reads as a fault when nothing is wrong."""
+    from lej_cc.formatting import build_status_report
+    from lej_cc.health import Health
+
+    fresh = Health()  # never polled, just started
+    text = build_status_report(fresh, [], _settings(tmp_path))[0]["text"]["text"]
+    assert "🟢" in text
+
+
+def test_a_just_started_bot_is_green_even_with_awbs_pending(tmp_path):
+    """It has not had time to poll yet."""
+    from lej_cc.formatting import build_status_report
+    from lej_cc.health import Health
+    from lej_cc.store import JobStore
+
+    store = JobStore(tmp_path / "j.sqlite3")
+    store.create_job("93602927993", "C1", "U1")
+
+    text = build_status_report(Health(), store.list_active(), _settings(tmp_path))[0][
+        "text"
+    ]["text"]
+    assert "🟢" in text
 
 
 def test_status_never_rounds_a_stuck_awb_up_to_100(tmp_path):
@@ -198,3 +229,11 @@ def test_status_surfaces_the_last_error(tmp_path):
     text = build_status_report(health, [], _settings(tmp_path))[0]["text"]["text"]
     assert "ApiUnavailable" in text
     assert "41 ok · 2 failed" in text
+
+
+def test_poll_number_is_not_written_as_a_hash(tmp_path):
+    """Slack renders "check #1" as "check 🔒Private channel": a leading # in
+    mrkdwn is a channel reference."""
+    rendered = str(build_status_blocks(snap(5, 10), poll_count=3))
+    assert "poll 3" in rendered
+    assert "#3" not in rendered
