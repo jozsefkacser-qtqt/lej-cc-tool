@@ -1,7 +1,12 @@
 # Audit and roadmap
 
-State as of 2026-09-09: running in production on WSL, tracking live AWBs,
-90 tests, CI green.
+State as of 2026-09-15: running in production on WSL, tracking live AWBs
+and booking references, 178 tests, CI green.
+
+**Shipped since the audit:** email notifications, the escalation rule,
+online/offline reporting with a heartbeat, running-version visibility,
+booking-reference support, the chase sheet, and one row per AWB in a Google
+Sheet. What follows is what is left.
 
 ---
 
@@ -30,7 +35,7 @@ blocking for two minutes before replying, and test fixtures that a
 
 | Severity | Finding | Notes |
 |---|---|---|
-| **Medium** | **No liveness signal.** If the process dies, nothing says so; you find out when an AWB stops updating. | See *Operational confidence* below. |
+| ~~Medium~~ | ~~No liveness signal.~~ **Done** — startup/shutdown announcements, `/awb status`, and a dead-man's-switch heartbeat. |
 | **Medium** | **Untested edges.** `slack_app`, `slack_io`, `portground`, `cli` and `main` have no tests — the entire Slack input surface and the HTTP client. The domain core is well covered; the boundaries are not. |
 | **Medium** | **No auto-restart.** `nohup` survives closing a window, not a reboot. |
 | **Low** | **At-least-once delivery.** A crash between posting and rescheduling re-posts on restart. Correct trade (never lose an update), worth knowing. |
@@ -132,7 +137,7 @@ actually worth.
 
 | Idea | Size | Value |
 |---|---|---|
-| **Email trigger** (Part 2b) | 1.5 days | **Requested** |
+| **Email trigger** (Part 2b) | 1.5 days | **Requested — next up.** Needs a mailbox named. |
 | Auto-detect AWBs posted in a dedicated channel | 2 h | **High.** Zero friction; the code exists, it is switched off. |
 | Bulk: paste or upload a list of AWBs | half a day | Medium — useful for a flight's worth at once |
 | Standing AWBs: track every AWB on a route automatically | 1 day | Medium, needs a source of "which AWBs" |
@@ -142,8 +147,8 @@ actually worth.
 
 | Idea | Size | Value |
 |---|---|---|
-| **Email notifications** (Part 2a) | 1 day | **Requested** |
-| Google Sheet live dashboard, one row per AWB | half a day | **High** for management visibility |
+| ~~Email notifications~~ (Part 2a) | — | **Done** — HTML + text, both workbooks attached, domain allowlist |
+| ~~Google Sheet, one row per AWB~~ | — | **Done** — own tab, pulled into Daily Report_LEJ by VLOOKUP |
 | Google Drive archive of every export | 2 h | **High.** Audit trail, and it is nearly free. |
 | Weekly digest: what cleared, what took longest | half a day | Medium |
 | Push notification files to `portground.notification@singular-it.de` | 1 day | Medium — closes the loop back to PortGround |
@@ -166,7 +171,7 @@ data, and it accumulates whether or not anyone builds on it.
 
 | Idea | Size | Value |
 |---|---|---|
-| Escalation: @-mention a group if below X% after N hours | 2 h | **High** |
+| ~~Escalation if an AWB stops moving~~ | — | **Done** — once per stall, re-arms on progress |
 | Quiet hours: no updates 20:00–06:00, digest at 06:00 | 2 h | Medium |
 | Per-AWB cadence (`/awb 488-… every 10m`) | 2 h | Medium |
 | Adaptive cadence: faster while moving, slower overnight | half a day | Medium |
@@ -182,18 +187,30 @@ data, and it accumulates whether or not anyone builds on it.
 
 ---
 
+## Scope boundaries, decided
+
+Recording these so they are not re-litigated or quietly widened.
+
+| Boundary | Why |
+|---|---|
+| The sheet export writes `CC Completed` and no further milestone | The bot owns what it can observe in PortGround's export. Pickup, line haul and depot arrival come from systems it cannot see, and an inferred value in a column an SLA calculation reads is worse than a blank. |
+| It writes only to its own tab, never into the hand-maintained report | Column alignment there cannot be read reliably, and 234 rows of real work are one offset away from corruption. |
+| Booking references are accepted when typed, never scraped from message text | They carry no checksum, so a pattern loose enough to catch one also catches order numbers and file names. |
+| An unrecognised customs status counts as *not cleared* | Silently rounding an unknown up to cleared is the one failure mode that costs money. |
+
 # Recommended order
 
-1. **Oracle VM + systemd + heartbeat** — everything else assumes the bot is up.
-2. **Email notifications (2a)** — requested, and it forces the `Destination`
-   refactor that 2b needs anyway.
-3. **Email trigger (2b)** — requested, with the sender allowlist non-optional.
-4. **Drive archive + Sheet dashboard** — cheap, high visibility, and the
-   archive is the audit trail this process should have had from day one.
-5. **Completion forecast** — the smallest change with the largest effect on
+1. **Oracle VM + systemd** — the last thing standing between this and
+   something colleagues can rely on without anyone nursing it. WSL has now
+   cost sleep interruptions, DNS failures and manual restarts; none of them
+   are bugs in the tool and none of them happen on a server.
+2. **Email trigger** — requested, with the sender allowlist non-optional.
+3. **Completion forecast** — the smallest change with the largest effect on
    how the tool is used: a status becomes a decision.
-6. **Lead-time analytics** — by then the history is deep enough to be worth
-   reading.
+4. **Lead-time analytics** — the snapshots table now keeps clearance
+   timestamps, so the history is accumulating whether or not anyone reads it.
+5. **Drive archive** of every export — cheap, and the audit trail this
+   process should have had from day one.
 
-Everything above the line is a week of work. Items 4–6 are what turn this
-from a notifier into something with its own value.
+Item 1 is half a day. Items 3–5 are what turn this from a notifier into
+something with its own value.

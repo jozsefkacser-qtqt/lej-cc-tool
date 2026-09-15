@@ -9,6 +9,14 @@ lookup, and the worst a bug can do is spoil the bot's own tab.
 
 The AWB is written in the same `936-02927610` form the report already uses,
 so a VLOOKUP against it needs no massaging.
+
+**Scope, decided deliberately:** the report tracks the whole chain -- pickup,
+arrival at the customs centre, line haul, regional depot. This bot writes
+`CC Completed` and stops there. It owns what it can actually observe from
+PortGround's export; every other milestone comes from somewhere it cannot
+see, and a value inferred rather than observed is worse than a blank in a
+column an SLA calculation reads. Do not widen this without a data source to
+back the new column.
 """
 
 from __future__ import annotations
