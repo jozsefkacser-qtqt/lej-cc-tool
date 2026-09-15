@@ -137,6 +137,46 @@ lej-cc-sheet-sync --dry-run   # print the rows, write nothing
 lej-cc-sheet-sync             # write them
 ```
 
+## Clearance statistics
+
+```
+/awb stats           # the last 90 days
+/awb stats 30        # a shorter window
+```
+
+```
+12 AWB(s) tracked in the last 90 days · 10,966 shipments
+Outcomes: complete 10 · active 1 · timeout 1
+
+Clearance time (first shipment cleared → last), 10 AWBs
+  median 3.2 h · 90th percentile 8.1 h · fastest 1.4 h · slowest 26.4 h
+
+Longest to clear
+  936-02927610 — 26.4 h over 1,605 shipments
+  ...
+```
+
+The same report from the command line, with a per-AWB export for a
+spreadsheet:
+
+```bash
+lej-cc-stats --days 30
+lej-cc-stats --csv clearance.csv
+```
+
+Both share one summariser, so the two cannot drift apart.
+
+**It refuses to average an anecdote.** Below three AWBs with timings it
+says how many it has and stops, because a median over two invites a
+decision it cannot support. AWBs with no clearance timestamps -- tracked
+before those were recorded, or where nothing ever cleared -- are counted
+and named as excluded rather than quietly dropped, so the sample size
+behind a median is always visible.
+
+Per-shipment questions (*which consignees habitually block?*) need per-HAWB
+history the snapshots table does not keep. That is a schema change, not a
+query, and is deliberately not approximated.
+
 ## Escalation
 
 An AWB that stops moving is the case a status bot is worst at: it says

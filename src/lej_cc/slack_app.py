@@ -14,6 +14,7 @@ from slack_bolt import Ack, App, Respond
 from slack_sdk import WebClient
 
 from . import formatting
+from .analytics import gather, summarise
 from .awb import extract_all, format_display, normalize
 from .config import Settings
 from .errors import AwbChecksumFailed, InvalidAwbFormat
@@ -35,6 +36,7 @@ HELP = (
     "• `/awb 488-20744846 name@qtlogistics.eu` — and email the updates there\n"
     "• `/awb list` — what is currently being tracked in this channel\n"
     "• `/awb status` — is the tool running, and how healthy is it\n"
+    "• `/awb stats [days]` — how long clearance has been taking\n"
     "• `/awb stop 488-20744846` — stop tracking\n"
     "• `/awb help` — this message\n\n"
     "The first check runs immediately, the next after 15 minutes, then every "
@@ -125,6 +127,12 @@ def build_app(
         # Starting and stopping are channel events: everyone watching this
         # channel needs to know an AWB is being tracked, or has stopped being
         # tracked, without having to ask who did it. Queries stay private.
+        if verb == "stats":
+            days = int(argument) if argument.strip().isdigit() else 90
+            report = summarise(gather(store, window_days=days))
+            respond(_in_channel("*Clearance statistics*\n" + "\n".join(report)))
+            return
+
         if verb == "status":
             respond(
                 {
