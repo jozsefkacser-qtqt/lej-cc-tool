@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from . import version
 from .awb import format_display
 from .model import Snapshot, SnapshotDiff
 
@@ -272,7 +273,9 @@ def build_status_blocks(
     return blocks
 
 
-def build_status_report(health, active_jobs: list, settings) -> list[dict]:  # noqa: ANN001
+def build_status_report(
+    health, active_jobs: list, settings, running_version=None
+) -> list[dict]:  # noqa: ANN001
     """The answer to `/awb status`.
 
     Note what the absence of this message means: if the bot is down, Slack
@@ -314,7 +317,52 @@ def build_status_report(health, active_jobs: list, settings) -> list[dict]:  # n
         "*Email:* " + ("on" if settings.email_enabled else "off (Slack only)")
     )
 
+    if running_version is not None:
+        lines.append(f"*Running:* `{running_version}`")
+        checked_out = version.current()
+        if checked_out.commit != running_version.commit:
+            lines.append(
+                f"⚠️ *`{checked_out.commit}` is checked out but not running* — "
+                "the code was updated after the bot started. Restart to pick it up."
+            )
+
     return [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
+
+
+def build_escalation_blocks(
+    snapshot: Snapshot,
+    stalled_for: timedelta,
+    *,
+    mention: str = "",
+    last_progress_at: datetime | None = None,
+) -> list[dict]:
+    """The one message that breaks the silence when an AWB stops moving.
+
+    Sent once per stall, not once per poll. Without it, "nothing to report"
+    and "nothing has happened for six hours" look identical in a channel.
+    """
+    open_rows = snapshot.open_rows
+    since = (
+        f" Nothing has cleared since {_stamp(last_progress_at)}."
+        if last_progress_at
+        else ""
+    )
+    who = f"\n{mention}" if mention else ""
+
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"⚠️ *{format_display(snapshot.mawb)} has not moved in "
+                    f"{_duration(stalled_for)}*\n"
+                    f"Still at {snapshot.percent:.1f}% — *{len(open_rows):,} shipment(s) "
+                    f"still open*.{since}{who}"
+                ),
+            },
+        }
+    ]
 
 
 def build_error_blocks(mawb: str, message: str, *, fatal: bool = True) -> list[dict]:

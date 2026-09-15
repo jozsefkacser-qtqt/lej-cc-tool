@@ -73,6 +73,11 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("jobs", "email_to", "TEXT"),
     ("jobs", "email_message_id", "TEXT"),
     ("jobs", "source", "TEXT NOT NULL DEFAULT 'slack'"),
+    # Escalation works off when an AWB last *moved*, not how long it has
+    # existed: an AWB climbing steadily needs nobody, one frozen at 99.9%
+    # needs someone now.
+    ("jobs", "last_progress_at", "TEXT"),
+    ("jobs", "escalated_at", "TEXT"),
 )
 
 
@@ -115,6 +120,10 @@ class Job:
     #: it so a mail client threads them into one conversation.
     email_message_id: str | None = None
     source: str = "slack"
+    #: When a shipment last cleared. Reset on every real advance, which is
+    #: what makes a second stall escalate again after the first was resolved.
+    last_progress_at: datetime | None = None
+    escalated_at: datetime | None = None
 
     @property
     def is_first_poll(self) -> bool:
@@ -146,7 +155,19 @@ class Job:
             email_to=row["email_to"],
             email_message_id=row["email_message_id"],
             source=row["source"] or "slack",
+            last_progress_at=_dt(row["last_progress_at"]),
+            escalated_at=_dt(row["escalated_at"]),
         )
+
+    def stalled_for(self, now: datetime | None = None) -> timedelta:
+        """How long since this AWB last advanced.
+
+        Falls back to creation time: an AWB that has never cleared anything
+        has been stuck since it started, which is exactly the case worth
+        shouting about.
+        """
+        reference = self.last_progress_at or self.created_at
+        return (now or utcnow()) - reference
 
     @property
     def email_recipients(self) -> list[str]:
@@ -297,6 +318,7 @@ class JobStore:
         cleared: int | None = None,
         total: int | None = None,
         reset_failures: bool = False,
+        made_progress: bool = False,
         increment_poll: bool = True,
         increment_empty: bool = False,
         increment_failure: bool = False,
@@ -314,6 +336,12 @@ class JobStore:
             sets.append("consecutive_failures = consecutive_failures + 1")
         elif reset_failures:
             sets.append("consecutive_failures = 0")
+        if made_progress:
+            # A real advance clears the escalation, so a later stall escalates
+            # again rather than staying silent because it shouted once.
+            sets.append("last_progress_at = ?")
+            params.append(_iso(utcnow()))
+            sets.append("escalated_at = NULL")
         if status_map is not None:
             sets.append("last_status_map = ?")
             params.append(json.dumps(status_map))
@@ -338,6 +366,12 @@ class JobStore:
                 (state, reason, _iso(utcnow()), job_id),
             )
         log.info("job %s finished: %s (%s)", job_id, state, reason)
+
+    def mark_escalated(self, job_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE jobs SET escalated_at = ? WHERE id = ?", (_iso(utcnow()), job_id)
+            )
 
     def set_email_message_id(self, job_id: int, message_id: str) -> None:
         """Record the first mail's id so later mails thread under it."""

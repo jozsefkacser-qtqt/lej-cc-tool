@@ -501,3 +501,125 @@ def test_slack_still_works_with_email_switched_off(settings, store, data_dir):
 
     assert len(notifier.posts) == 1
     assert email.updates == []
+
+
+# --- escalation ---------------------------------------------------------
+# Without it, "nothing to report" and "nothing has happened for six hours"
+# are the same message: none.
+
+
+def _backdate_progress(store, job_id: int, hours: float) -> None:
+    """Pretend the last shipment cleared `hours` ago."""
+    from datetime import timedelta
+
+    from lej_cc.store import _iso, utcnow
+
+    store._conn.execute(
+        "UPDATE jobs SET last_progress_at = ? WHERE id = ?",
+        (_iso(utcnow() - timedelta(hours=hours)), job_id),
+    )
+
+
+def test_a_moving_awb_is_never_escalated(settings, store, data_dir):
+    settings.escalation_after_hours = 4
+    tracker, notifier = build(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "all_cleared.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    _backdate_progress(store, job.id, 10)
+
+    tracker.run_once(store.get(job.id))  # this poll clears more
+
+    assert not any("has not moved" in str(p.get("blocks")) for p in notifier.posts)
+
+
+def test_a_stalled_awb_is_escalated(settings, store, data_dir):
+    settings.escalation_after_hours = 4
+    settings.escalation_mention = "<!subteam^S012ABC>"
+    tracker, notifier = build(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "partial.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    _backdate_progress(store, job.id, 6)
+
+    tracker.run_once(store.get(job.id))  # identical content: no progress
+
+    escalation = next(p for p in notifier.posts if "has not moved" in p["text"])
+    rendered = str(escalation["blocks"])
+    assert "6h" in rendered
+    assert "4 shipment(s) still open" in rendered
+    assert "<!subteam^S012ABC>" in rendered
+    assert store.get(job.id).escalated_at is not None
+
+
+def test_it_escalates_once_not_every_poll(settings, store, data_dir):
+    settings.escalation_after_hours = 4
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    _backdate_progress(store, job.id, 6)
+
+    for _ in range(3):
+        tracker.run_once(store.get(job.id))
+
+    assert sum(1 for p in notifier.posts if "has not moved" in p["text"]) == 1
+
+
+def test_progress_rearms_the_escalation(settings, store, data_dir):
+    """A stall that resolves and recurs must shout again, not stay quiet
+    because it already shouted once."""
+    settings.escalation_after_hours = 4
+    tracker, notifier = build(
+        settings,
+        store,
+        [data_dir / "partial.xlsx", data_dir / "partial.xlsx", data_dir / "all_cleared.xlsx"],
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+
+    _backdate_progress(store, job.id, 6)
+    tracker.run_once(store.get(job.id))  # stall -> escalates
+    assert store.get(job.id).escalated_at is not None
+
+    tracker.run_once(store.get(job.id))  # progress -> clears the flag
+    reloaded = store.get(job.id)
+    assert reloaded.escalated_at is None or reloaded.state == "complete"
+
+
+def test_a_finished_awb_is_never_escalated(settings, store, data_dir):
+    settings.escalation_after_hours = 4
+    tracker, notifier = build(settings, store, [data_dir / "all_cleared.xlsx"])
+    job = store.create_job(MAWB, "C1", "U1")
+    _backdate_progress(store, job.id, 48)
+
+    tracker.run_once(store.get(job.id))
+
+    assert not any("has not moved" in p["text"] for p in notifier.posts)
+
+
+def test_escalation_can_be_switched_off(settings, store, data_dir):
+    settings.escalation_after_hours = 0
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    _backdate_progress(store, job.id, 100)
+
+    tracker.run_once(store.get(job.id))
+
+    assert not any("has not moved" in p["text"] for p in notifier.posts)
+
+
+def test_escalation_also_goes_out_by_email(settings, store, data_dir):
+    settings.escalation_after_hours = 4
+    tracker, _, email = build_with_email(
+        settings, store, [data_dir / "partial.xlsx", data_dir / "partial.xlsx"]
+    )
+    job = store.create_job(MAWB, "C1", "U1")
+    tracker.run_once(job)
+    _backdate_progress(store, job.id, 6)
+
+    tracker.run_once(store.get(job.id))
+
+    assert any("has cleared in" in e for e in email.errors)

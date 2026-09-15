@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     google_drive_folder_id: str = ""
     google_sheet_id: str = ""
 
+    # --- escalation ---
+    #: Shout when an AWB has not advanced for this long and is not finished.
+    #: 0 disables. Measured from the last shipment that cleared, not from the
+    #: start: a slow AWB that is still moving does not need anyone.
+    escalation_after_hours: float = 4.0
+    #: Prepended to the escalation message. A user group reads best, e.g.
+    #: <!subteam^S012ABC>; <!here> and <!channel> also work.
+    escalation_mention: str = ""
+
     # --- knowing whether it is alive ---
     #: Channel for "online" / "going offline" announcements. Falls back to
     #: the ops channel; empty means no announcements.

@@ -81,6 +81,30 @@ Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
 
+## Escalation
+
+An AWB that stops moving is the case a status bot is worst at: it says
+nothing, and so does an AWB that is perfectly fine. Both look like silence.
+
+When nothing has cleared for `ESCALATION_AFTER_HOURS` and the AWB is not
+finished, it posts **once**:
+
+```
+⚠️ 936-02927993 has not moved in 6h 12m
+Still at 99.9% — 2 shipment(s) still open.
+Nothing has cleared since 15 Sep 2026 09:08.
+@customs
+```
+
+Measured from the last shipment that cleared, not from when tracking
+started: an AWB at 40% climbing steadily needs nobody, one frozen at 99.9%
+needs someone now.
+
+Once per stall, not once per poll -- and a real advance re-arms it, so a
+stall that resolves and recurs shouts again rather than staying quiet
+because it already shouted. `ESCALATION_MENTION` decides who gets pinged;
+`ESCALATION_AFTER_HOURS=0` switches it off.
+
 ## Knowing whether it is running
 
 A process cannot report its own death, so this is three separate things.
@@ -91,8 +115,10 @@ a clean stop it says it is going offline. That covers restarts and planned
 stops -- not a crash, and not the power going out.
 
 **Anyone can ask.** `/awb status` reports uptime, what is being tracked,
-when the last check succeeded, how many have failed, the last error and the
-last PortGround response time. It goes amber when nothing has succeeded for
+when the last check succeeded, how many have failed, the last error, the
+last PortGround response time, and **which commit is running** -- with a
+warning when a newer one is checked out but the bot has not been restarted,
+which is the normal way to spend an afternoon debugging a fixed bug. It goes amber when nothing has succeeded for
 90 minutes, because running and working are different states. And if the
 bot is down, Slack answers *"the app did not respond"* -- no answer is an
 answer.

@@ -42,7 +42,12 @@ HELP = (
 )
 
 
-def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> App:
+def build_app(
+    settings: Settings,
+    store: JobStore,
+    scheduler: PollScheduler,
+    running_version=None,  # noqa: ANN001
+) -> App:
     app = App(token=settings.slack_bot_token, logger=log)
 
     def start_tracking(
@@ -126,7 +131,7 @@ def build_app(settings: Settings, store: JobStore, scheduler: PollScheduler) -> 
                     "response_type": "in_channel",
                     "text": "AWB Tracker status",
                     "blocks": formatting.build_status_report(
-                        HEALTH, store.list_active(), settings
+                        HEALTH, store.list_active(), settings, running_version
                     ),
                 }
             )

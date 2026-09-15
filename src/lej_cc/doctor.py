@@ -248,7 +248,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--offline", action="store_true", help="skip the Slack and API calls")
     args = parser.parse_args(argv)
 
-    print("lej-cc-tool preflight\n")
+    from . import version
+
+    print(f"lej-cc-tool preflight — checked-out version {version.current()}\n")
     results = run(args.mawb, offline=args.offline)
 
     width = max(len(r.check) for r in results)

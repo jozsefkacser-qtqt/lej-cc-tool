@@ -14,6 +14,7 @@ from slack_sdk.http_retry.builtin_handlers import (
     RateLimitErrorRetryHandler,
 )
 
+from . import version
 from .config import Settings, configure_logging
 from .emailer import EmailNotifier
 from .health import Heartbeat
@@ -57,7 +58,9 @@ def main() -> int:
         log.info("heartbeat every %ss", settings.heartbeat_interval_seconds)
     scheduler = PollScheduler(store, tracker, heartbeat=heartbeat)
 
-    app = build_app(settings, store, scheduler)
+    running_version = version.current()
+    log.info("running %s", running_version)
+    app = build_app(settings, store, scheduler, running_version)
     handler = SocketModeHandler(app, settings.slack_app_token)
 
     store.recover_leases()
@@ -76,7 +79,10 @@ def main() -> int:
             log.exception("could not post the status announcement")
 
     resumed = f", resuming {len(active)} tracked AWB(s)" if active else ""
-    announce(f":large_green_circle: *AWB Tracker is online*{resumed}.")
+    announce(
+        f":large_green_circle: *AWB Tracker is online*{resumed}.\n"
+        f"_Version `{running_version}`_"
+    )
     heartbeat.ping(force=True)
 
     stopping = threading.Event()

@@ -134,6 +134,7 @@ class Tracker:
                 f"{self.settings.max_tracking_hours}h"
             )
         else:
+            self._maybe_escalate(job, snapshot, diff)
             self.store.reschedule(
                 job.id,
                 next_run_at,  # type: ignore[arg-type]
@@ -142,7 +143,49 @@ class Tracker:
                 cleared=snapshot.cleared,
                 total=snapshot.total,
                 reset_failures=True,
+                made_progress=bool(diff.newly_cleared),
             )
+
+    def _maybe_escalate(self, job: Job, snapshot: Snapshot, diff) -> None:  # noqa: ANN001
+        """Break the silence when an AWB has stopped moving.
+
+        Once per stall, not once per poll, and never while it is advancing:
+        the whole point is that a channel which says nothing should mean
+        nothing is wrong.
+        """
+        hours = self.settings.escalation_after_hours
+        if hours <= 0 or diff.newly_cleared or job.escalated_at is not None:
+            return
+
+        stalled_for = job.stalled_for()
+        if stalled_for < timedelta(hours=hours):
+            return
+
+        log.info("escalating %s: no progress for %s", job.mawb, stalled_for)
+        blocks = formatting.build_escalation_blocks(
+            snapshot,
+            stalled_for,
+            mention=self.settings.escalation_mention,
+            last_progress_at=job.last_progress_at,
+        )
+        self.notifier.post(
+            job.channel_id,
+            text=(
+                f"{format_display(job.mawb)} has not moved in "
+                f"{formatting._duration(stalled_for)} — {len(snapshot.open_rows):,} open"
+            ),
+            blocks=blocks,
+            thread_ts=job.thread_ts,
+            broadcast=bool(job.thread_ts),
+        )
+        if self.email is not None and self.email.enabled:
+            self.email.send_error(
+                job,
+                f"No shipment has cleared in {formatting._duration(stalled_for)}. "
+                f"Still at {snapshot.percent:.1f}%, {len(snapshot.open_rows):,} open.",
+                fatal=False,
+            )
+        self.store.mark_escalated(job.id)
 
     def _post_update(
         self,
