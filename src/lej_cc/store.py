@@ -423,6 +423,15 @@ class JobStore:
                 (job_id,),
             ).fetchone()
 
+    def recent_snapshots(self, job_id: int, since: datetime):  # noqa: ANN201
+        """Snapshots for a job taken since `since`, oldest first."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT taken_at, cleared, total FROM snapshots"
+                " WHERE job_id = ? AND taken_at >= ? ORDER BY taken_at",
+                (job_id, _iso(since)),
+            ).fetchall()
+
     def list_all_jobs(self) -> list[Job]:
         """Every job ever tracked, oldest first. Used by the sheet backfill."""
         with self._lock:

@@ -30,6 +30,16 @@ Since last check: ▲ 412 cleared
 [ 🔄 Refresh now ]  [ Stop tracking ]
 ```
 
+`🔮 Expected done ~17:42 · 140/h` is a least-squares fit over the last six
+hours of this AWB's own recorded history -- not the gap between the last two
+polls, because clearance arrives in bursts and two points either side of one
+batch promise everything finishing in twenty minutes.
+
+It refuses to answer rather than guess: fewer than three samples in the
+window, nothing cleared, a count going backwards, or an answer more than a
+week out all produce no forecast. A missing estimate is honest; a made-up
+one gets planned around.
+
 The bar is coloured by state -- green above 95%, amber above 50%, red below
 -- and only a genuine 100% fills it. 97.8% rounding up to ten green cells
 would say "finished" about an AWB with 34 shipments still stuck.

@@ -86,6 +86,22 @@ def _completion_note(snapshot: Snapshot, reference: datetime) -> str:
     return note
 
 
+def _eta_text(eta: datetime, now: datetime) -> str:
+    """Say the time the way someone reading it would.
+
+    "~17:40" when that is today, because the date is noise; the day when it
+    is not, because "~09:15" about tomorrow morning is a trap.
+    """
+    local_eta = eta.astimezone(LOCAL_TZ)
+    local_now = now.astimezone(LOCAL_TZ)
+    days = (local_eta.date() - local_now.date()).days
+    if days <= 0:
+        return f"~{local_eta:%H:%M}"
+    if days == 1:
+        return f"~{local_eta:%H:%M} tomorrow"
+    return f"~{local_eta:%a %d %b %H:%M}"
+
+
 def _open_section(hawbs: list[str], threshold: int) -> str:
     """Name the open shipments only while naming them is useful.
 
@@ -121,6 +137,7 @@ def build_status_blocks(
     is_final: bool = False,
     poll_count: int = 0,
     tracking_since: datetime | None = None,
+    forecast=None,  # noqa: ANN001 - a forecast.Forecast
 ) -> list[dict]:
     """The status card. `is_final` switches the wording to a closing note."""
     mawb = format_display(snapshot.mawb)
@@ -160,6 +177,16 @@ def build_status_blocks(
         },
     ]
     reference = snapshot.fetched_at or datetime.now(LOCAL_TZ)
+    if forecast is not None and not done:
+        fields.append(
+            {
+                "type": "mrkdwn",
+                "text": (
+                    f"*🔮 Expected done*\n{_eta_text(forecast.eta, reference)}"
+                    f"  ·  {forecast.per_hour:,.0f}/h"
+                ),
+            }
+        )
     if done and snapshot.last_clearance:
         fields.append(
             {

@@ -17,6 +17,7 @@ from .awb import format_display
 from .config import Settings
 from .emailer import EmailNotifier
 from .errors import LejCcError
+from .forecast import DEFAULT_WINDOW, estimate
 from .health import HEALTH
 from .model import Snapshot, diff_snapshots
 from .parser import StatusMapper, parse_workbook
@@ -211,6 +212,7 @@ class Tracker:
 
         blocks = formatting.build_status_blocks(
             snapshot,
+            forecast=self._forecast(job, snapshot),
             diff=diff,
             next_run_at=next_run_at,
             requested_by=job.requested_by,
@@ -293,6 +295,23 @@ class Tracker:
         # Re-read the job so the row carries the counters this poll just set.
         current = self.store.get(job.id) or job
         self.sheet.upsert(build_row(current, snapshot))
+
+    def _forecast(self, job: Job, snapshot: Snapshot):  # noqa: ANN201
+        """Estimate the finish time from this AWB's own recorded history."""
+        if snapshot.is_complete:
+            return None
+        now = snapshot.fetched_at or utcnow()
+        try:
+            history = [
+                (datetime.fromisoformat(row["taken_at"]), row["cleared"])
+                for row in self.store.recent_snapshots(job.id, now - DEFAULT_WINDOW)
+            ]
+            return estimate(
+                history, total=snapshot.total, cleared=snapshot.cleared, now=now
+            )
+        except Exception:  # noqa: BLE001 - a forecast is never worth an update
+            log.exception("could not forecast %s", job.mawb)
+            return None
 
     def _build_chase_sheet(self, job: Job, snapshot: Snapshot) -> Path | None:
         try:

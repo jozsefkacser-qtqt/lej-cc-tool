@@ -237,3 +237,50 @@ def test_poll_number_is_not_written_as_a_hash(tmp_path):
     rendered = str(build_status_blocks(snap(5, 10), poll_count=3))
     assert "poll 3" in rendered
     assert "#3" not in rendered
+
+
+def test_the_card_shows_the_expected_finish_time():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from lej_cc.forecast import Forecast
+
+    tz = ZoneInfo("Europe/Berlin")
+    now = datetime(2026, 9, 15, 15, 0, tzinfo=tz)
+    snapshot = snap(800, 1000)
+    snapshot.fetched_at = now
+
+    forecast = Forecast(eta=now + timedelta(hours=2, minutes=40), per_hour=75, points=5,
+                        remaining=200)
+    rendered = str(build_status_blocks(snapshot, forecast=forecast))
+    assert "Expected done" in rendered
+    assert "~17:40" in rendered
+    assert "75/h" in rendered
+
+
+def test_tomorrows_finish_says_tomorrow():
+    """"~09:15" about tomorrow morning is a trap."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from lej_cc.forecast import Forecast
+
+    tz = ZoneInfo("Europe/Berlin")
+    now = datetime(2026, 9, 15, 22, 0, tzinfo=tz)
+    snapshot = snap(800, 1000)
+    snapshot.fetched_at = now
+
+    forecast = Forecast(eta=now + timedelta(hours=11), per_hour=20, points=5, remaining=200)
+    assert "tomorrow" in str(build_status_blocks(snapshot, forecast=forecast))
+
+
+def test_a_finished_awb_shows_no_forecast():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from lej_cc.forecast import Forecast
+
+    tz = ZoneInfo("Europe/Berlin")
+    now = datetime(2026, 9, 15, 15, 0, tzinfo=tz)
+    forecast = Forecast(eta=now + timedelta(hours=1), per_hour=10, points=5, remaining=0)
+    assert "Expected done" not in str(build_status_blocks(snap(10, 10), forecast=forecast))

@@ -623,3 +623,38 @@ def test_escalation_also_goes_out_by_email(settings, store, data_dir):
     tracker.run_once(store.get(job.id))
 
     assert any("has cleared in" in e for e in email.errors)
+
+
+def test_the_card_forecasts_from_the_recorded_history(settings, store, data_dir):
+    """End to end: snapshots written by earlier polls become the estimate on
+    the card. The maths is tested elsewhere; this is the wiring."""
+    from datetime import timedelta
+
+    from lej_cc.store import _iso, utcnow
+
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    job = store.create_job(MAWB, "C1", "U1")
+
+    # Four hours of steady progress, ending just below where this poll lands.
+    now = utcnow()
+    for hours_ago, cleared in ((4, 2), (3, 3), (2, 4), (1, 5)):
+        store._conn.execute(
+            "INSERT INTO snapshots (job_id, mawb, taken_at, total, cleared,"
+            " not_cleared, other, items_total, items_cleared, percent)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (job.id, MAWB, _iso(now - timedelta(hours=hours_ago)), 10, cleared,
+             10 - cleared, 0, 20, cleared * 2, cleared * 10.0),
+        )
+
+    tracker.run_once(job)  # partial.xlsx is 6 of 10
+
+    rendered = str(notifier.posts[0]["blocks"])
+    assert "Expected done" in rendered, "history should have produced a forecast"
+
+
+def test_no_forecast_without_history(settings, store, data_dir):
+    """A first poll has nothing to extrapolate from and must not invent one."""
+    tracker, notifier = build(settings, store, [data_dir / "partial.xlsx"])
+    tracker.run_once(store.create_job(MAWB, "C1", "U1"))
+
+    assert "Expected done" not in str(notifier.posts[0]["blocks"])
