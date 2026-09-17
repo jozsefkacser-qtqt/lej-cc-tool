@@ -24,29 +24,58 @@ LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 BAR_WIDTH = 10
 BAR_EMPTY = "⬜"
+#: Cells for shipments customs has taken for examination. They fill the bar
+#: like cleared ones -- nothing here is going to move them -- but they are
+#: plainly not the same thing, so they read as their own block.
+BAR_INSPECTION = "🟥"
 #: Filled colour by completeness, so the state of an AWB reads at a glance
-#: from across the room: green nearly done, amber mid-flight, red barely started.
-BAR_COLOURS = ((95.0, "🟩"), (50.0, "🟨"), (0.0, "🟥"))
+#: from across the room: green nearly done, amber mid-flight, orange barely
+#: started. Not red at the low end -- red is reserved for shipments customs
+#: has taken, and a barely-started AWB looked identical to a fully inspected
+#: one when both were red.
+BAR_COLOURS = ((95.0, "🟩"), (50.0, "🟨"), (0.0, "🟧"))
 
 
 def bar_colour(percent: float) -> str:
     return next(colour for threshold, colour in BAR_COLOURS if percent >= threshold)
 
 
-def progress_bar(percent: float, width: int = BAR_WIDTH) -> str:
-    """Ten cells, coloured by state.
+def _cells(percent: float, width: int) -> int:
+    """How many cells a percentage earns.
 
-    Only a genuine 100% shows a full bar: 97.8% rounding up to ten green
-    cells would say "finished" about an AWB with 34 shipments still stuck.
+    Only a genuine 100% earns every cell: 97.8% rounding up to ten would say
+    "finished" about an AWB with 34 shipments still stuck. Anything above
+    zero earns at least one, because "some" and "none" must look different.
     """
     percent = max(0.0, min(100.0, percent))
     if percent >= 100.0:
-        filled = width
-    else:
-        filled = min(width - 1, int(percent * width / 100))
-        if percent > 0:
-            filled = max(1, filled)  # any progress at all should be visible
-    return bar_colour(percent) * filled + BAR_EMPTY * (width - filled)
+        return width
+    filled = min(width - 1, int(percent * width / 100))
+    return max(1, filled) if percent > 0 else 0
+
+
+def progress_bar(
+    percent: float, width: int = BAR_WIDTH, inspection: float = 0.0
+) -> str:
+    """Ten cells: cleared, then under inspection, then still open.
+
+    The two filled blocks together say how much of the AWB is settled, which
+    is the number that decides whether anyone has to do anything; keeping
+    them as separate colours says how much of that is actually released.
+    """
+    cleared_cells = _cells(percent, width)
+    settled_cells = _cells(percent + inspection, width)
+    # Never let rounding give inspection more room than there is left, and
+    # never let it hide a cleared cell.
+    inspection_cells = max(0, min(width - cleared_cells, settled_cells - cleared_cells))
+    if inspection > 0 and inspection_cells == 0 and cleared_cells < width:
+        inspection_cells = 1  # one held shipment must still be visible
+    empty = width - cleared_cells - inspection_cells
+    return (
+        bar_colour(percent) * cleared_cells
+        + BAR_INSPECTION * inspection_cells
+        + BAR_EMPTY * empty
+    )
 
 
 def _hhmm(value: datetime | None) -> str:
@@ -102,6 +131,14 @@ def _eta_text(eta: datetime, now: datetime) -> str:
     return f"~{local_eta:%a %d %b %H:%M}"
 
 
+def _inspection_list(snapshot: Snapshot, threshold: int) -> str:
+    """Name the held shipments while naming them is useful."""
+    hawbs = [r.hawb for r in snapshot.inspection_rows]
+    if len(hawbs) <= threshold:
+        return ", ".join(f"`{h}`" for h in hawbs)
+    return "_Listed in the attached workbook, marked_ `inspection`."
+
+
 def _open_section(hawbs: list[str], threshold: int) -> str:
     """Name the open shipments only while naming them is useful.
 
@@ -142,13 +179,26 @@ def build_status_blocks(
     """The status card. `is_final` switches the wording to a closing note."""
     mawb = format_display(snapshot.mawb)
     done = snapshot.is_complete
+    held = snapshot.inspection
 
-    if done:
+    if done and held:
+        headline = f"✅ {mawb} — cleared, {held:,} under inspection"
+    elif done:
         headline = f"✅ {mawb} — cleared"
     elif is_final:
         headline = f"⚠️ {mawb} — stopped, still open"
     else:
         headline = f"📦 {mawb} — customs clearance"
+
+    # The two numbers add up to how much of the AWB is settled, and the bar
+    # fills to match. Both are printed when there is an inspection, because
+    # "98.9%" alone reads as an AWB that is stuck one shipment short.
+    headline_percent = f"*{snapshot.percent:.1f}%*"
+    if held:
+        headline_percent += (
+            f"  cleared  ·  *{snapshot.percent_inspection:.1f}%* inspection"
+            f"  =  *{snapshot.percent_settled:.1f}%*"
+        )
 
     blocks: list[dict] = [
         {"type": "header", "text": {"type": "plain_text", "text": headline, "emoji": True}},
@@ -156,7 +206,10 @@ def build_status_blocks(
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"{progress_bar(snapshot.percent)}  *{snapshot.percent:.1f}%*",
+                "text": (
+                    f"{progress_bar(snapshot.percent, inspection=snapshot.percent_inspection)}"
+                    f"  {headline_percent}"
+                ),
             },
         },
     ]
@@ -166,7 +219,19 @@ def build_status_blocks(
             "type": "mrkdwn",
             "text": f"*✅ Cleared*\n{snapshot.cleared:,} of {snapshot.total:,}",
         },
-        {"type": "mrkdwn", "text": f"*⏳ Open*\n{snapshot.not_cleared + snapshot.other:,}"},
+        {"type": "mrkdwn", "text": f"*⏳ Open*\n{snapshot.open_count:,}"},
+    ]
+    if held:
+        fields.append(
+            {
+                "type": "mrkdwn",
+                "text": (
+                    f"*❌ Under inspection*\n{held:,}"
+                    f"  ({snapshot.percent_inspection:.1f}%)"
+                ),
+            }
+        )
+    fields += [
         {
             "type": "mrkdwn",
             "text": (
@@ -210,6 +275,28 @@ def build_status_blocks(
             }
         )
 
+    if held:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"*❌ {held:,} shipment(s) taken by customs for examination.*\n"
+                        + _inspection_list(snapshot, inline_threshold)
+                        + (
+                            "\n_Tracking stops here: the rest is a customs decision "
+                            "on a customs timetable, and re-checking every 30 minutes "
+                            f"does not change it. Run `/awb {mawb}` when you want a "
+                            "fresh look._"
+                            if done
+                            else "\n_Not counted as open — nobody here can move them._"
+                        )
+                    ),
+                },
+            }
+        )
+
     if snapshot.other:
         unknown = ", ".join(f"`{k}` ×{v:,}" for k, v in sorted(snapshot.unknown_statuses.items()))
         blocks.append(
@@ -234,6 +321,8 @@ def build_status_blocks(
             parts.append(f"+{len(diff.newly_added):,} new")
         if diff.removed:
             parts.append(f"−{len(diff.removed):,} removed")
+        if diff.newly_inspected:
+            parts.append(f"❌ {len(diff.newly_inspected):,} taken for *inspection*")
         if diff.regressed:
             parts.append(f":rotating_light: {len(diff.regressed):,} back to *not cleared*")
         blocks.append(

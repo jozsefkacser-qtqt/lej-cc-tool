@@ -27,7 +27,9 @@ from .model import Snapshot, SnapshotDiff
 log = logging.getLogger(__name__)
 
 # Slack's colours, as hex, so the two channels read as one system.
-COLOURS = {"🟩": "#2e7d32", "🟨": "#ed6c02", "🟥": "#c62828"}
+COLOURS = {"🟩": "#2e7d32", "🟨": "#ed6c02", "🟧": "#e65100", "🟥": "#c62828"}
+#: Shipments customs has taken. Red in both channels, and only ever this.
+INSPECTION_COLOUR = "#c62828"
 TRACK = "#e3e6ea"
 INK = "#1f3b57"
 MUTED = "#5b6b7a"
@@ -66,8 +68,13 @@ def render_html(
     done = snapshot.is_complete
     colour = _percent_colour(snapshot.percent)
     filled = max(0.0, min(100.0, snapshot.percent))
+    held_width = max(0.0, min(100.0 - filled, snapshot.percent_inspection))
 
-    if done:
+    held = snapshot.inspection
+    if done and held:
+        heading = f"{mawb} — cleared, {held:,} under inspection"
+        badge = "COMPLETE"
+    elif done:
         heading, badge = f"{mawb} — cleared", "COMPLETE"
     elif is_final:
         heading, badge = f"{mawb} — stopped, still open", "STOPPED"
@@ -76,16 +83,35 @@ def render_html(
 
     stats = [
         _stat("Cleared", f"{snapshot.cleared:,} of {snapshot.total:,}"),
-        _stat("Open", f"{snapshot.not_cleared + snapshot.other:,}"),
+        _stat("Open", f"{snapshot.open_count:,}"),
+    ]
+    if held:
+        stats.append(
+            _stat(
+                "Under inspection",
+                f'<span style="color:{INSPECTION_COLOUR}">{held:,}'
+                f" ({snapshot.percent_inspection:.1f}%)</span>",
+            )
+        )
+    stats.append(
         _stat(
             "Declaration lines",
             f"{snapshot.items_cleared:,} of {snapshot.items_total:,}",
-        ),
-    ]
+        )
+    )
     if done and snapshot.last_clearance:
         stats.append(_stat("Finished", _stamp(snapshot.last_clearance)))
     elif next_run_at:
         stats.append(_stat("Next check", _hhmm(next_run_at)))
+
+    held_headline = (
+        f'<span style="font-size:17px;color:{MUTED};font-weight:500"> cleared'
+        f'  ·  <span style="color:{INSPECTION_COLOUR}">'
+        f"{snapshot.percent_inspection:.1f}% inspection</span>"
+        f"  =  {snapshot.percent_settled:.1f}%</span>"
+        if held
+        else ""
+    )
 
     change = ""
     if diff and diff.has_changes:
@@ -96,6 +122,11 @@ def render_html(
             parts.append(f"{len(diff.newly_added):,} new shipments")
         if diff.removed:
             parts.append(f"{len(diff.removed):,} removed")
+        if diff.newly_inspected:
+            parts.append(
+                f'<b style="color:{INSPECTION_COLOUR}">'
+                f"{len(diff.newly_inspected):,} taken for inspection</b>"
+            )
         if diff.regressed:
             parts.append(
                 f'<b style="color:{COLOURS["🟥"]}">'
@@ -115,6 +146,22 @@ def render_html(
             f"<b>{snapshot.other:,} shipment(s) carry a status we do not recognise</b> "
             f"({values}). They are counted as not cleared. Please report them so the "
             f"mapping can be extended.</p>"
+        )
+
+    held_note = ""
+    if held:
+        held_note = (
+            f'<p style="margin:0 0 18px;padding:12px 14px;border-radius:6px;'
+            f'background:#fdecea;font-size:13px;color:#7a1c1c">'
+            f"<b>{held:,} shipment(s) have been taken by customs for "
+            f"examination.</b> They are not counted as open — nobody here can "
+            f"move them. "
+            + (
+                "Tracking stops here; the rest is a customs decision."
+                if done
+                else "They are listed in the attached workbook."
+            )
+            + "</p>"
         )
 
     open_note = ""
@@ -137,16 +184,18 @@ def render_html(
 <h1 style="margin:4px 0 18px;font-size:21px;color:{INK};font-weight:650">{heading}</h1>
 
 <div style="font-size:34px;font-weight:700;color:{colour};line-height:1">
-  {snapshot.percent:.1f}%</div>
+  {snapshot.percent:.1f}%{held_headline}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
  style="margin:10px 0 22px;height:10px;border-radius:5px;overflow:hidden;background:{TRACK}">
  <tr><td style="width:{filled:.2f}%;background:{colour};font-size:0;line-height:0">&nbsp;</td>
+     <td style="width:{held_width:.2f}%;background:{INSPECTION_COLOUR};font-size:0;
+      line-height:0">&nbsp;</td>
      <td style="font-size:0;line-height:0">&nbsp;</td></tr></table>
 
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px">
  <tr>{stats[0]}{stats[1]}</tr><tr>{stats[2]}{stats[3] if len(stats) > 3 else ""}</tr></table>
 
-{change}{unknown}{open_note}
+{change}{held_note}{unknown}{open_note}
 
 <p style="margin:22px 0 0;padding-top:14px;border-top:1px solid #e8edf1;
  font-size:12px;color:{MUTED}">
@@ -165,13 +214,26 @@ def render_text(
 ) -> str:
     """Plain-text alternative, for clients that refuse HTML."""
     mawb = format_display(snapshot.mawb)
+    settled = (
+        f" + {snapshot.percent_inspection:.1f}% inspection "
+        f"= {snapshot.percent_settled:.1f}%"
+        if snapshot.inspection
+        else ""
+    )
     lines = [
-        f"MAWB {mawb} — {snapshot.percent:.1f}% cleared",
+        f"MAWB {mawb} — {snapshot.percent:.1f}% cleared{settled}",
         "",
         f"Cleared:           {snapshot.cleared:,} of {snapshot.total:,}",
-        f"Open:              {snapshot.not_cleared + snapshot.other:,}",
+        f"Open:              {snapshot.open_count:,}",
         f"Declaration lines: {snapshot.items_cleared:,} of {snapshot.items_total:,}",
     ]
+    if snapshot.inspection:
+        lines.insert(
+            4,
+            f"Under inspection:  {snapshot.inspection:,} "
+            f"({snapshot.percent_inspection:.1f}%) — taken by customs, not "
+            f"counted as open",
+        )
     if snapshot.is_complete and snapshot.last_clearance:
         lines.append(f"Finished:          {_stamp(snapshot.last_clearance)}")
     elif next_run_at:

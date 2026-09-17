@@ -44,6 +44,9 @@ COLUMNS: list[tuple[str, str, int]] = [
 HEADER_FILL = PatternFill("solid", fgColor="1F3B57")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 OTHER_FILL = PatternFill("solid", fgColor="FFE0E0")
+#: Rows customs has taken. A different shade from OTHER_FILL, which means
+#: "we do not know what this is" -- these we know exactly.
+INSPECTION_FILL = PatternFill("solid", fgColor="FFF0F0")
 
 
 def _days_open(row: ShipmentRow, now: datetime) -> float | None:
@@ -58,10 +61,16 @@ def _days_open(row: ShipmentRow, now: datetime) -> float | None:
     return round((now - min(stamps)).total_seconds() / 86400, 1)
 
 
-def _sort_key(row: ShipmentRow) -> tuple[int, datetime | None]:
-    """Oldest first; shipments with no timestamps at all go last."""
+def _sort_key(row: ShipmentRow) -> tuple[int, int, datetime | None]:
+    """Chaseable shipments first, oldest first; no timestamps at all last.
+
+    Inspections sort to the bottom: they belong in the sheet so they are not
+    forgotten, but nobody here can act on one, and a work list that opens on
+    rows you cannot work is a work list people stop opening.
+    """
     stamps = [s for s in (row.check_in, row.declaration_sent) if s]
-    return (0, min(stamps)) if stamps else (1, None)
+    held = 1 if row.is_inspection else 0
+    return (held, 0, min(stamps)) if stamps else (held, 1, None)
 
 
 def _cell_value(row: ShipmentRow, field: str, now: datetime):  # noqa: ANN201
@@ -74,8 +83,13 @@ def _cell_value(row: ShipmentRow, field: str, now: datetime):  # noqa: ANN201
 
 
 def build_open_shipments_workbook(snapshot: Snapshot, dest_dir: Path) -> Path | None:
-    """Write the chase sheet for `snapshot`. Returns None if nothing is open."""
-    open_rows = snapshot.open_rows
+    """Write the chase sheet for `snapshot`. None if everything has cleared.
+
+    Lists everything not cleared, inspections included. They are not open --
+    nobody here can move them -- but leaving them out of the attachment is
+    how a shipment stops being looked at altogether.
+    """
+    open_rows = snapshot.unsettled_rows
     if not open_rows:
         return None
 
@@ -100,6 +114,9 @@ def build_open_shipments_workbook(snapshot: Snapshot, dest_dir: Path) -> Path | 
         if row.status is ClearanceStatus.OTHER:
             for index in range(1, len(COLUMNS) + 1):
                 sheet.cell(row=sheet.max_row, column=index).fill = OTHER_FILL
+        elif row.is_inspection:
+            for index in range(1, len(COLUMNS) + 1):
+                sheet.cell(row=sheet.max_row, column=index).fill = INSPECTION_FILL
 
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}{sheet.max_row}"
@@ -107,7 +124,12 @@ def build_open_shipments_workbook(snapshot: Snapshot, dest_dir: Path) -> Path | 
     dest_dir.mkdir(parents=True, exist_ok=True)
     path = dest_dir / f"open_{snapshot.mawb}_{now:%Y%m%d_%H%M%S}.xlsx"
     workbook.save(path)
-    log.info("wrote chase sheet for %s with %d open rows", snapshot.mawb, len(open_rows))
+    log.info(
+        "wrote chase sheet for %s with %d row(s) (%d under inspection)",
+        snapshot.mawb,
+        len(open_rows),
+        snapshot.inspection,
+    )
     return path
 
 

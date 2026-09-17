@@ -25,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("mawb", help="e.g. 488-20744846")
     parser.add_argument("--file", type=Path, help="parse a local workbook instead of downloading")
     parser.add_argument("--list-open", action="store_true", help="print every open HAWB")
+    parser.add_argument(
+        "--statuses",
+        action="store_true",
+        help="list the raw Final Status values in this export and what they map to",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -49,9 +54,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"MAWB {format_display(snapshot.mawb)}   {snapshot.source_filename}")
-    print(f"  {progress_bar(snapshot.percent)}  {snapshot.percent:.1f}%")
+    print(
+        f"  {progress_bar(snapshot.percent, inspection=snapshot.percent_inspection)}"
+        f"  {snapshot.percent:.1f}%"
+        + (
+            f" cleared + {snapshot.percent_inspection:.1f}% inspection"
+            f" = {snapshot.percent_settled:.1f}%"
+            if snapshot.inspection
+            else ""
+        )
+    )
     print(f"  cleared      {snapshot.cleared:>6,} / {snapshot.total:,}")
-    print(f"  not cleared  {snapshot.not_cleared:>6,}")
+    print(f"  open         {snapshot.open_count:>6,}")
+    if snapshot.inspection:
+        print(f"  inspection   {snapshot.inspection:>6,}   taken by customs")
     if snapshot.other:
         print(f"  other        {snapshot.other:>6,}   {snapshot.unknown_statuses}")
     print(f"  decl. lines  {snapshot.items_cleared:>6,} / {snapshot.items_total:,}")

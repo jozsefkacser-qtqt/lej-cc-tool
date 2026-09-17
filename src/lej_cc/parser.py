@@ -76,6 +76,7 @@ class StatusMapper:
 
     def __init__(self, mapping: dict[str, list[str]]) -> None:
         self._lookup: dict[str, ClearanceStatus] = {}
+        self._keyword_matched: set[str] = set()
         for bucket, values in mapping.items():
             try:
                 status = ClearanceStatus(bucket)
@@ -89,7 +90,25 @@ class StatusMapper:
         return " ".join(str(value or "").split()).casefold()
 
     def map(self, raw: Any) -> ClearanceStatus:
-        return self._lookup.get(self._key(raw), ClearanceStatus.OTHER)
+        key = self._key(raw)
+        known = self._lookup.get(key)
+        if known is not None:
+            return known
+        # PortGround's exact wording for an examination is not pinned down --
+        # "marked for inspection", "customs inspection", "inspection" have all
+        # been reported. Rather than miscount whichever one arrives, anything
+        # naming an inspection is treated as one, and said out loud the first
+        # time so the precise value can be added to status_map.yaml.
+        if "inspection" in key or "beschau" in key:
+            if key not in self._keyword_matched:
+                self._keyword_matched.add(key)
+                log.info(
+                    "treating Final Status %r as INSPECTION (matched on the word "
+                    "'inspection'). Add it to status_map.yaml to make it explicit.",
+                    str(raw),
+                )
+            return ClearanceStatus.INSPECTION
+        return ClearanceStatus.OTHER
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> StatusMapper:

@@ -386,6 +386,57 @@ password**. `IMAP_PROCESSED_FOLDER` files handled mail out of the inbox;
 leave it empty to mark it read in place. `lej-cc-doctor` logs in, selects
 the folder read-only and reports what would happen to an arriving mail.
 
+## Shipments under customs inspection
+
+An inspection is **not an open shipment**. Customs has taken it; nobody on
+the team can move it, and counting it as open makes a finished AWB read as a
+stuck one — 1,067 of 1,079 cleared, parked at 98.9%, with twelve shipments
+that were never going to change without a customs decision.
+
+So it gets its own bucket, and the numbers add up:
+
+```
+🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥  98.9% cleared · 1.1% inspection = 100.0%
+
+✅ Cleared            ⏳ Open       ❌ Under inspection
+1,067 of 1,079        0            12  (1.1%)
+```
+
+| | |
+|---|---|
+| The bar | Green for cleared, **red for inspection**, white for still open. No progress colour is red any more — a barely-started AWB and a fully-inspected one used to render identically. |
+| Completeness | `cleared + inspection == total` means **complete**: tracking stops, because re-checking every 30 minutes does not change a customs decision. The final card names the held shipments and tells you how to re-check. |
+| `CC Completed` in the sheet | Filled **only when every line genuinely cleared**. A shipment still being examined has not completed customs clearance, whatever the tracker has stopped doing about it. |
+| The chase sheet | Still lists them, shaded and sorted to the bottom — not chaseable, but a row that disappears is a row nobody looks at again. |
+| Escalation | An inspection-only AWB is complete, so it never escalates. There is nothing to escalate to. |
+
+### Which status values count as inspections
+
+`config/status_map.yaml` lists them, and **any value containing the word
+"inspection" is treated as one even if it is not listed** — PortGround's
+exact wording is not pinned down, and miscounting it as open is the failure
+this exists to prevent. Each new wording is logged once so you can add it:
+
+```
+INFO treating Final Status 'Marked for inspection' as INSPECTION (matched on
+     the word 'inspection'). Add it to status_map.yaml to make it explicit.
+```
+
+To see what a real export actually contains:
+
+```bash
+python -m lej_cc.cli 936-02928693 --statuses
+```
+
+```
+  Final Status values:
+   1,067  'cleared' -> cleared
+      12  'Marked for inspection' -> inspection
+```
+
+If the wording lives in a different column than `Final Status`, that output
+will show it — send it over and the mapping moves in one line.
+
 ## Attachments
 
 Each update carries two files:

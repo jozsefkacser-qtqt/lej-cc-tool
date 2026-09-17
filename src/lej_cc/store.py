@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     cleared      INTEGER NOT NULL,
     not_cleared  INTEGER NOT NULL,
     other        INTEGER NOT NULL,
+    inspection   INTEGER NOT NULL DEFAULT 0,
     items_total  INTEGER NOT NULL DEFAULT 0,
     items_cleared INTEGER NOT NULL DEFAULT 0,
     percent      REAL    NOT NULL
@@ -101,6 +102,9 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # analysis will be built from.
     ("snapshots", "first_clearance", "TEXT"),
     ("snapshots", "last_clearance", "TEXT"),
+    # Shipments customs took for examination. Defaults to 0, which is the
+    # truth for every snapshot taken before the bucket existed.
+    ("snapshots", "inspection", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -413,9 +417,9 @@ class JobStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO snapshots (job_id, mawb, taken_at, generated_at, total, cleared,"
-                " not_cleared, other, items_total, items_cleared, percent,"
+                " not_cleared, other, inspection, items_total, items_cleared, percent,"
                 " first_clearance, last_clearance)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     job_id,
                     snapshot.mawb,
@@ -425,6 +429,7 @@ class JobStore:
                     snapshot.cleared,
                     snapshot.not_cleared,
                     snapshot.other,
+                    snapshot.inspection,
                     snapshot.items_total,
                     snapshot.items_cleared,
                     snapshot.percent,

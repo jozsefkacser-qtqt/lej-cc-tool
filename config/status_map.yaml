@@ -16,3 +16,19 @@ cleared:
 not_cleared:
   - not cleared
   - ""          # blank Final Status = registered but not yet processed
+
+# Customs has taken the shipment for examination. Not cleared -- but not an
+# unworked shipment either, so the bot counts it apart from "open": nobody
+# here can move it, and an AWB waiting on three inspections should not read
+# as an AWB with three shipments nobody has touched.
+#
+# Any value containing the word "inspection" is treated as one even if it is
+# not listed here, and logged so the exact wording can be added. Add the real
+# value below once you have seen it; the keyword fallback is a safety net,
+# not a substitute.
+inspection:
+  - inspection
+  - marked for inspection
+  - customs inspection
+  - physical inspection
+  - selected for inspection

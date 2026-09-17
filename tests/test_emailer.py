@@ -112,7 +112,7 @@ def test_html_bar_width_matches_the_percentage():
 
 def test_html_colour_reflects_state():
     assert "#2e7d32" in render_html(snap(1544, 1578))  # green, nearly done
-    assert "#c62828" in render_html(snap(1, 100))  # red, barely started
+    assert "#e65100" in render_html(snap(1, 100))  # red, barely started
 
 
 def test_completed_mail_says_when_it_finished():

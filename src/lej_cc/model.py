@@ -13,10 +13,15 @@ from enum import StrEnum
 
 
 class ClearanceStatus(StrEnum):
-    """The three buckets every shipment line falls into."""
+    """The buckets every shipment line falls into."""
 
     CLEARED = "cleared"
     NOT_CLEARED = "not_cleared"
+    #: Customs has selected the shipment for examination. Not cleared, but
+    #: also not something the team can chase: it is a customs decision on a
+    #: customs timetable. Counted separately so an AWB waiting on three
+    #: inspections does not read as an AWB with three unworked shipments.
+    INSPECTION = "inspection"
     #: A Final Status value we have never seen before. Deliberately not
     #: folded into NOT_CLEARED: an unrecognised status must be visible, so a
     #: new value like "blocked" or "seized" surfaces instead of hiding.
@@ -49,6 +54,15 @@ class ShipmentRow:
         return self.status is ClearanceStatus.CLEARED
 
     @property
+    def is_inspection(self) -> bool:
+        return self.status is ClearanceStatus.INSPECTION
+
+    @property
+    def is_settled(self) -> bool:
+        """Nothing further is expected of us: cleared, or with customs."""
+        return self.is_cleared or self.is_inspection
+
+    @property
     def inconsistent(self) -> bool:
         """Final Status and Clearance Time disagree.
 
@@ -57,6 +71,8 @@ class ShipmentRow:
         either PortGround changed something or we are reading a partial write.
         Worth surfacing, not worth failing on.
         """
+        if self.is_inspection:
+            return self.clearance_time is not None
         return self.is_cleared != (self.clearance_time is not None)
 
 
@@ -97,9 +113,33 @@ class Snapshot:
         return sum(1 for r in self.rows if r.status is ClearanceStatus.OTHER)
 
     @property
+    def inspection(self) -> int:
+        return sum(1 for r in self.rows if r.status is ClearanceStatus.INSPECTION)
+
+    @property
+    def open_count(self) -> int:
+        """Shipments somebody can still do something about."""
+        return self.total - self.cleared - self.inspection
+
+    @property
     def percent(self) -> float:
         """Completeness by shipment count. An empty sheet is 0%, not 100%."""
         return round(100.0 * self.cleared / self.total, 1) if self.total else 0.0
+
+    @property
+    def percent_inspection(self) -> float:
+        return round(100.0 * self.inspection / self.total, 1) if self.total else 0.0
+
+    @property
+    def percent_settled(self) -> float:
+        """Cleared plus under inspection -- everything not still open.
+
+        Computed from the counts rather than by adding the two rounded
+        percentages, so 33.33 + 66.67 cannot print as 100.1.
+        """
+        if not self.total:
+            return 0.0
+        return round(100.0 * (self.cleared + self.inspection) / self.total, 1)
 
     # --- secondary measure: pieces ---
 
@@ -112,17 +152,54 @@ class Snapshot:
         return sum(r.items for r in self.rows if r.is_cleared)
 
     @property
+    def items_inspection(self) -> int:
+        return sum(r.items for r in self.rows if r.is_inspection)
+
+    @property
     def items_percent(self) -> float:
         return round(100.0 * self.items_cleared / self.items_total, 1) if self.items_total else 0.0
 
     @property
-    def is_complete(self) -> bool:
-        """Every line cleared. A sheet with zero rows is never 'complete'."""
+    def all_cleared(self) -> bool:
+        """Every line genuinely released by customs."""
         return self.total > 0 and self.cleared == self.total
 
     @property
+    def is_complete(self) -> bool:
+        """Nothing left that anyone here can move.
+
+        Every line is either cleared or held by customs for examination. An
+        AWB in this state is finished as far as this tool is concerned: the
+        remainder is a customs decision on a customs timetable, and polling
+        it every thirty minutes for two days does not change it. The final
+        message names the inspections so they are not lost.
+
+        A sheet with zero rows is never complete.
+        """
+        return self.total > 0 and self.cleared + self.inspection == self.total
+
+    @property
     def open_rows(self) -> list[ShipmentRow]:
-        """Everything not yet cleared -- the lines somebody has to chase."""
+        """The lines somebody here has to chase.
+
+        Inspections are excluded on purpose: they are not unworked shipments
+        waiting for someone, they are shipments customs has taken. Counting
+        them as open makes a finished AWB look like a stuck one.
+        """
+        return [r for r in self.rows if not r.is_settled]
+
+    @property
+    def inspection_rows(self) -> list[ShipmentRow]:
+        return [r for r in self.rows if r.is_inspection]
+
+    @property
+    def unsettled_rows(self) -> list[ShipmentRow]:
+        """Everything not cleared -- open *and* inspection.
+
+        What the chase sheet lists: an inspection needs no chasing, but it
+        does need to stay visible, and a row that vanishes from the
+        attachment is a row nobody looks at again.
+        """
         return [r for r in self.rows if not r.is_cleared]
 
     def status_by_hawb(self) -> dict[str, str]:
@@ -150,10 +227,19 @@ class SnapshotDiff:
     removed: list[str] = field(default_factory=list)
     #: Was cleared, now is not. Should never happen; if it does, say so loudly.
     regressed: list[str] = field(default_factory=list)
+    #: Newly taken by customs for examination. Reported in its own right:
+    #: it is the moment somebody may need to tell a customer.
+    newly_inspected: list[str] = field(default_factory=list)
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.newly_cleared or self.newly_added or self.removed or self.regressed)
+        return bool(
+            self.newly_cleared
+            or self.newly_added
+            or self.removed
+            or self.regressed
+            or self.newly_inspected
+        )
 
     @property
     def delta_cleared(self) -> int:
@@ -168,6 +254,7 @@ def diff_snapshots(previous: dict[str, str] | None, current: Snapshot) -> Snapsh
 
     now = current.status_by_hawb()
     cleared = ClearanceStatus.CLEARED.value
+    inspection = ClearanceStatus.INSPECTION.value
 
     for hawb, status in now.items():
         was = previous.get(hawb)
@@ -177,6 +264,8 @@ def diff_snapshots(previous: dict[str, str] | None, current: Snapshot) -> Snapsh
             diff.newly_cleared.append(hawb)
         elif was == cleared and status != cleared:
             diff.regressed.append(hawb)
+        elif was != inspection and status == inspection:
+            diff.newly_inspected.append(hawb)
 
     diff.removed = [h for h in previous if h not in now]
     return diff

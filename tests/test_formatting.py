@@ -3,7 +3,13 @@ number. These cover the parts where getting it subtly wrong misleads."""
 
 from __future__ import annotations
 
-from lej_cc.formatting import BAR_WIDTH, bar_colour, build_status_blocks, progress_bar
+from lej_cc.formatting import (
+    BAR_COLOURS,
+    BAR_WIDTH,
+    bar_colour,
+    build_status_blocks,
+    progress_bar,
+)
 from lej_cc.model import ClearanceStatus, ShipmentRow, Snapshot
 
 
@@ -36,7 +42,13 @@ def test_any_progress_at_all_is_visible():
 def test_colour_reflects_state():
     assert bar_colour(97.8) == "🟩"
     assert bar_colour(60.0) == "🟨"
-    assert bar_colour(2.0) == "🟥"
+    assert bar_colour(2.0) == "🟧"
+
+
+def test_no_progress_colour_is_red():
+    """Red means one thing: customs has taken the shipment. A barely-started
+    AWB and a fully-inspected one used to render identically."""
+    assert "🟥" not in {colour for _, colour in BAR_COLOURS}
 
 
 def test_card_leads_with_the_number():

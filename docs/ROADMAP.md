@@ -213,6 +213,7 @@ Recording these so they are not re-litigated or quietly widened.
 | It writes only to its own tab, never into the hand-maintained report | Column alignment there cannot be read reliably, and 234 rows of real work are one offset away from corruption. |
 | Booking references are accepted when typed, never scraped from message text | They carry no checksum, so a pattern loose enough to catch one also catches order numbers and file names. |
 | An unrecognised customs status counts as *not cleared* | Silently rounding an unknown up to cleared is the one failure mode that costs money. |
+| A shipment under customs inspection counts as *settled*, not *open* | Nobody here can move it, so listing it as open work is false. It is not counted as cleared either: the two percentages are shown apart and sum to 100%, and `CC Completed` stays blank until everything genuinely clears. |
 
 # Recommended order
 

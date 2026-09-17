@@ -47,6 +47,7 @@ COLUMNS: list[tuple[str, str]] = [
     ("Shipments", "total"),
     ("Cleared", "cleared"),
     ("Open", "open"),
+    ("Under inspection", "inspection"),
     ("Unrecognised", "other"),
     ("Declaration lines", "lines_total"),
     ("Lines cleared", "lines_cleared"),
@@ -115,13 +116,18 @@ def build_row(job, snapshot: Snapshot | None = None) -> SheetRow:  # noqa: ANN00
                 "percent": snapshot.percent,
                 "total": snapshot.total,
                 "cleared": snapshot.cleared,
-                "open": snapshot.not_cleared + snapshot.other,
+                "open": snapshot.open_count,
+                "inspection": snapshot.inspection,
                 "other": snapshot.other,
                 "lines_total": snapshot.items_total,
                 "lines_cleared": snapshot.items_cleared,
                 "first_clearance": _stamp(first),
                 # The column the report's SLA chain already has a slot for.
-                "cc_completed": _stamp(last) if snapshot.is_complete else "",
+                # Only when every line genuinely cleared: a shipment customs
+                # is still examining has not completed customs clearance,
+                # whatever the tracker has stopped doing about it, and a
+                # date here that is not true is worse than a blank.
+                "cc_completed": _stamp(last) if snapshot.all_cleared else "",
                 "clearance_hours": (
                     round((last - first).total_seconds() / 3600, 2)
                     if first and last and last > first
@@ -161,6 +167,7 @@ def apply_snapshot_record(row: SheetRow, record) -> SheetRow:  # noqa: ANN001
 
     first_raw = record["first_clearance"] if "first_clearance" in record.keys() else None
     last_raw = record["last_clearance"] if "last_clearance" in record.keys() else None
+    held = record["inspection"] if "inspection" in record.keys() else 0
     complete = record["total"] and record["cleared"] == record["total"]
 
     row.values.update(
@@ -168,7 +175,10 @@ def apply_snapshot_record(row: SheetRow, record) -> SheetRow:  # noqa: ANN001
             "percent": record["percent"],
             "total": record["total"],
             "cleared": record["cleared"],
+            # not_cleared, other and inspection are disjoint counts, so open
+            # is simply the first two -- nothing to subtract.
             "open": record["not_cleared"] + record["other"],
+            "inspection": held,
             "other": record["other"],
             "lines_total": record["items_total"],
             "lines_cleared": record["items_cleared"],
