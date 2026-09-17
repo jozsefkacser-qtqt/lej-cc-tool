@@ -650,6 +650,24 @@ python -m lej_cc.cli 488-20744846              # live call
 python -m lej_cc.cli 488-20744846 --file x.xlsx --list-open
 ```
 
+## Changing a secret
+
+```bash
+bash deploy/set-secrets.sh
+```
+
+Prompts for each secret with the input hidden, keeps anything you skip with
+Enter, and leaves every other setting in the file untouched. Writing `.env`
+by hand with a shell one-liner is how an aborted prompt silently becomes an
+empty token.
+
+It also refuses the mistake that costs the most: your clipboard still holds
+the last thing you copied, so a Slack token pasted into the PortGround or
+mailbox prompt is **not written**, and any replacement of a noticeably
+different length has to be confirmed. Before touching anything it copies the
+file to `.env.backup-<timestamp>` and keeps the five most recent — these are
+files full of credentials, not an archive, and they are gitignored.
+
 ## Security
 
 The PortGround key is a bearer credential passed in a URL query string.

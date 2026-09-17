@@ -15,6 +15,14 @@ ENV_FILE=".env"
 [[ -f "$ENV_FILE" ]] || : > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
+# A copy before anything is touched. A secret pasted into the wrong prompt
+# is otherwise unrecoverable -- it happened, and it cost a PortGround key.
+BACKUP="$ENV_FILE.backup-$(date +%Y%m%d-%H%M%S)"
+cp "$ENV_FILE" "$BACKUP"
+chmod 600 "$BACKUP"
+# Keep the five most recent and no more: these are files full of credentials.
+ls -1t "$ENV_FILE".backup-* 2>/dev/null | tail -n +6 | xargs -r rm -f
+
 current() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 
 ask() {
@@ -45,6 +53,25 @@ ask() {
     if [[ -n "$prefix" && "$value" != "$prefix"* ]]; then
         echo "  ✗ should start with '$prefix' — not written. Run this again."
         return
+    fi
+    # A Slack token pasted into the PortGround or mailbox prompt. The clipboard
+    # still holds the last thing you copied, so this is the easy mistake to
+    # make and the expensive one: it silently replaces a credential you may
+    # have nowhere else.
+    if [[ -z "$prefix" && ( "$value" == xoxb-* || "$value" == xapp-* ) ]]; then
+        echo "  ✗ that is a Slack token, and this prompt is not asking for one."
+        echo "    Nothing written. Press Enter here to keep the current value."
+        return
+    fi
+    # A replacement of a very different length is usually the wrong clipboard.
+    if [[ -n "$existing" ]] && (( ${#value} != ${#existing} )); then
+        printf '  ! this replaces a %d-character value with a %d-character one.\n' \
+            "${#existing}" "${#value}"
+        read -rp "    Type yes to confirm, anything else to keep the old one: " confirm
+        if [[ "$confirm" != "yes" ]]; then
+            echo "  kept the existing value"
+            return
+        fi
     fi
     if (( ${#value} < minimum )); then
         echo "  ✗ only ${#value} chars, expected at least $minimum — not written. Run this again."
@@ -84,6 +111,8 @@ ask PORTGROUND_API_KEY "PortGround API key (from the PortGround mail)" ""      3
 ask SMTP_PASSWORD      "SMTP password     (optional — Enter to skip)"   ""      8
 ask IMAP_PASSWORD      "Mailbox password  (optional — Enter to skip)"   ""      8
 
+echo
+echo "A copy of .env as it was before this run: $BACKUP"
 echo
 echo "Current .env (values shown only as lengths):"
 awk -F= 'NF>1 && $1 !~ /^#/ {printf "  %-22s %d chars\n", $1, length($2)}' "$ENV_FILE"

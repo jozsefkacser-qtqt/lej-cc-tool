@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 venv/
 .env
+# set-secrets.sh keeps a copy of the previous .env. Same secrets, same rules.
+.env.backup-*
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
