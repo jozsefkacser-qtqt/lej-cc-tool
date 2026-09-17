@@ -109,12 +109,17 @@ def ensure_pinned(
             text="Post an AWB number here and it is tracked.",
         )
     except SlackApiError as exc:
-        log.error(
-            "could not post the explainer in %s: %s — invite me with "
-            "/invite @AWB Tracker, or set PIN_EXPLAINER=false",
-            channel,
-            exc.response.get("error", ""),
-        )
+        code = exc.response.get("error", "")
+        hint = {
+            # The id is on the channel's link, not its name -- a placeholder
+            # left in .env looks exactly like this.
+            "channel_not_found": (
+                f"there is no channel {channel!r}. Check AUTODETECT_CHANNELS "
+                "against the channel's link: Copy link -> .../archives/C09ABCDEF"
+            ),
+            "not_in_channel": "invite me with /invite @AWB Tracker",
+        }.get(code, "set PIN_EXPLAINER=false to stop trying")
+        log.error("could not post the explainer in %s: %s — %s", channel, code, hint)
         return None
 
     ts = posted["ts"]

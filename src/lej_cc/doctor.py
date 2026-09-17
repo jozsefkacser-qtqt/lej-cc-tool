@@ -156,6 +156,53 @@ def check_email(settings) -> Result:  # noqa: ANN001
     )
 
 
+#: What Slack's error means for the person reading it.
+CHANNEL_ERRORS = {
+    "channel_not_found": (
+        "no channel with that id. Check AUTODETECT_CHANNELS: the id is on the "
+        "channel's link (Copy link -> .../archives/C09ABCDEF), not its name. "
+        "A private channel the bot has never been invited to reads the same way."
+    ),
+    "not_in_channel": "the bot is not a member. In Slack: /invite @AWB Tracker",
+    "is_archived": "that channel is archived",
+    "missing_scope": (
+        "the bot has no channels:history scope. Paste the current manifest into "
+        "the app's App Manifest page, save, then Install App -> Reinstall."
+    ),
+}
+
+
+def check_autodetect(settings) -> Result:  # noqa: ANN001
+    """Can the bot actually see the channels it is meant to watch?
+
+    A one-line read of each channel's history proves the id exists and the
+    bot can read it -- which is the whole of what auto-detect needs. Added
+    after a placeholder channel id went into .env and only surfaced as an
+    error in the log after a restart.
+    """
+    from slack_sdk import WebClient
+    from slack_sdk.errors import SlackApiError
+
+    channels = settings.autodetect_channel_ids
+    if not channels:
+        return Result("auto-detect", OK, "off (AUTODETECT_CHANNELS empty)")
+
+    client = WebClient(token=settings.slack_bot_token)
+    problems: list[str] = []
+    for channel in channels:
+        try:
+            client.conversations_history(channel=channel, limit=1)
+        except SlackApiError as exc:
+            code = exc.response.get("error", "unknown")
+            problems.append(f"{channel}: {CHANNEL_ERRORS.get(code, code)}")
+        except Exception as exc:  # noqa: BLE001 - network, DNS, TLS
+            return Result("auto-detect", FAIL, f"{channel}: {exc}")
+
+    if problems:
+        return Result("auto-detect", FAIL, "; ".join(problems))
+    return Result("auto-detect", OK, f"watching {', '.join(channels)}")
+
+
 def check_inbox(settings) -> Result:  # noqa: ANN001
     """Log in to the mailbox and select the folder. Reads nothing."""
     import imaplib
@@ -288,6 +335,7 @@ def run(mawb: str = SAMPLE_MAWB, *, offline: bool = False) -> list[Result]:
 
     results.append(check_slack(settings))
     results.append(check_email(settings))
+    results.append(check_autodetect(settings))
     results.append(check_inbox(settings))
     results.append(check_portground(settings, mawb))
     return results

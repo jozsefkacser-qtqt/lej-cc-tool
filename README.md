@@ -640,8 +640,15 @@ make doctor          # or: lej-cc-doctor
 ```
 
 Validates the config, both Slack tokens, storage permissions, the status
-map, Slack authentication and a live PortGround download — each failure
-naming its fix. Add `--offline` to skip the two network checks.
+map, Slack authentication, the auto-detect channels, the mailbox and a live
+PortGround download — each failure naming its fix. Add `--offline` to skip
+the network checks.
+
+The auto-detect check reads one message from each channel in
+`AUTODETECT_CHANNELS`, which proves the id exists and the bot can see it. A
+wrong id otherwise only surfaces as a line in the log after a restart —
+`C0XXXXXXX` left in place from an example looks entirely plausible until
+something tries to use it.
 
 ### 5. Smoke-test without Slack
 

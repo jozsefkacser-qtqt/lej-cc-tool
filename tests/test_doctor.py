@@ -73,3 +73,100 @@ def test_no_mailbox_configured_is_not_a_failure(tmp_path):
         download_dir=tmp_path / "downloads",
     )
     assert not doctor.check_inbox(settings).failed
+
+
+# --- the auto-detect channel --------------------------------------------
+
+
+class FakeSlack:
+    """Stands in for WebClient; fails conversations_history on demand."""
+
+    def __init__(self, errors: dict[str, str] | None = None) -> None:
+        self.errors = errors or {}
+        self.read: list[str] = []
+
+    def __call__(self, token=None):  # noqa: ANN001 - used as the class itself
+        return self
+
+    def conversations_history(self, channel, limit=1):  # noqa: ANN001
+        from slack_sdk.errors import SlackApiError
+
+        if channel in self.errors:
+            raise SlackApiError("no", {"ok": False, "error": self.errors[channel]})
+        self.read.append(channel)
+        return {"ok": True, "messages": []}
+
+
+def _settings(tmp_path, channels: str):
+    from lej_cc.config import Settings
+
+    return Settings(
+        slack_bot_token="xoxb-a",
+        slack_app_token="xapp-a",
+        portground_api_key="k",
+        database_path=tmp_path / "x.sqlite3",
+        download_dir=tmp_path / "downloads",
+        autodetect_channels=channels,
+    )
+
+
+def test_auto_detect_off_is_not_a_problem(tmp_path):
+    assert not doctor.check_autodetect(_settings(tmp_path, "")).failed
+
+
+def test_a_reachable_channel_passes(tmp_path, monkeypatch):
+    import slack_sdk
+
+    fake = FakeSlack()
+    monkeypatch.setattr(slack_sdk, "WebClient", fake)
+    result = doctor.check_autodetect(_settings(tmp_path, "C0AWB, C0LEJ"))
+
+    assert not result.failed
+    assert fake.read == ["C0AWB", "C0LEJ"]
+
+
+def test_a_placeholder_channel_id_is_caught_before_restarting(tmp_path, monkeypatch):
+    """The real case: C0XXXXXXX went into .env and only showed up as a log
+    line after a restart."""
+    import slack_sdk
+
+    monkeypatch.setattr(
+        slack_sdk, "WebClient", FakeSlack({"C0XXXXXXX": "channel_not_found"})
+    )
+    result = doctor.check_autodetect(_settings(tmp_path, "C0XXXXXXX"))
+
+    assert result.failed
+    assert "Copy link" in result.detail  # says where to find the real one
+
+
+def test_a_channel_the_bot_is_not_in_says_to_invite(tmp_path, monkeypatch):
+    import slack_sdk
+
+    monkeypatch.setattr(slack_sdk, "WebClient", FakeSlack({"C0AWB": "not_in_channel"}))
+    result = doctor.check_autodetect(_settings(tmp_path, "C0AWB"))
+
+    assert result.failed
+    assert "/invite" in result.detail
+
+
+def test_a_missing_scope_says_to_reinstall(tmp_path, monkeypatch):
+    import slack_sdk
+
+    monkeypatch.setattr(slack_sdk, "WebClient", FakeSlack({"C0AWB": "missing_scope"}))
+    result = doctor.check_autodetect(_settings(tmp_path, "C0AWB"))
+
+    assert result.failed
+    assert "Reinstall" in result.detail
+
+
+def test_every_bad_channel_is_named_not_just_the_first(tmp_path, monkeypatch):
+    import slack_sdk
+
+    monkeypatch.setattr(
+        slack_sdk,
+        "WebClient",
+        FakeSlack({"C0AAA": "channel_not_found", "C0BBB": "not_in_channel"}),
+    )
+    result = doctor.check_autodetect(_settings(tmp_path, "C0AAA,C0BBB"))
+
+    assert "C0AAA" in result.detail and "C0BBB" in result.detail
