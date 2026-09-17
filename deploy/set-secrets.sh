@@ -90,6 +90,9 @@ awk -F= 'NF>1 && $1 !~ /^#/ {printf "  %-22s %d chars\n", $1, length($2)}' "$ENV
 cat <<'DONE'
 
 Next:
-  lej-cc-doctor                                       # verify before restarting
-  pkill -f lej-cc; nohup .venv/bin/lej-cc > ~/lej-cc.log 2>&1 &
+  awb doctor                                          # verify before restarting
+  awb restart                                         # apply the new secrets
+
+(If `awb` is not a command yet: bash deploy/awbctl install, then
+ source ~/.bashrc.)
 DONE

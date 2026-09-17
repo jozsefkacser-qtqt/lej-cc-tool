@@ -52,6 +52,21 @@ acceptable; just decide it deliberately rather than discovering it.
 The recommendation: **use WSL to prove it works today, move to an
 always-on host once you are happy with it.**
 
+Until then, restarting it is one command. Install the shortcut once:
+
+```bash
+bash ~/lej-cc-tool/deploy/awbctl install && source ~/.bashrc
+```
+
+Then, after every Windows restart or sleep:
+
+```bash
+awb restart          # or: awb update, to pull the latest code first
+```
+
+It waits until the bot is genuinely up and tells you if it is not.
+`awb status` answers "is it running" without making you read a log.
+
 WSL's NAT networking, normally the awkward part of hosting anything under
 WSL, is a non-issue here — the bot accepts no inbound connections.
 

@@ -539,7 +539,42 @@ follow [`docs/DEPLOY-FREE.md`](docs/DEPLOY-FREE.md). The bot needs no
 inbound network access, so no ports are opened and no firewall rule is
 required.
 
-### 3. Check the setup
+### 3. The `awb` shortcut
+
+Running it by hand is four commands and one of them is easy to get wrong.
+Install the shortcut once:
+
+```bash
+bash ~/lej-cc-tool/deploy/awbctl install
+source ~/.bashrc
+```
+
+After that, from anywhere:
+
+| Command | What it does |
+|---|---|
+| `awb restart` | Stops it, starts it, **waits until it is really up** — and if it died on startup, prints the lines that say why |
+| `awb update` | `git pull`, refresh dependencies, restart |
+| `awb status` | Running? Since when? Which version? Plus the last few log lines |
+| `awb logs` | Follow the log |
+| `awb start` / `awb stop` | One or the other |
+| `awb doctor` | The preflight checks |
+
+`make restart`, `make status` and so on do the same from inside the
+directory.
+
+**Why not `pkill -f lej-cc`.** That pattern matches any process whose command
+line contains the string — including the restart script itself, which lives
+in `lej-cc-tool/`. It would kill itself halfway through and the bot would
+never come back. `awbctl` uses a pid file, and a bot started the old way
+(`nohup …`) is adopted on the first run rather than joined by a second copy —
+two bots would double every message in the channel.
+
+Stopping sends `SIGTERM`, so the bot drains its in-flight polls and posts
+*"going offline"* to Slack before exiting; only a process that ignores that
+for 25 seconds gets killed outright.
+
+### 4. Check the setup
 
 ```bash
 make doctor          # or: lej-cc-doctor
@@ -549,7 +584,7 @@ Validates the config, both Slack tokens, storage permissions, the status
 map, Slack authentication and a live PortGround download — each failure
 naming its fix. Add `--offline` to skip the two network checks.
 
-### 4. Smoke-test without Slack
+### 5. Smoke-test without Slack
 
 ```bash
 python -m lej_cc.cli 488-20744846              # live call

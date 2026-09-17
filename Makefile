@@ -1,4 +1,5 @@
-.PHONY: install dev test lint fmt fixtures run doctor docker
+.PHONY: install dev test lint fmt fixtures run doctor docker \
+        shortcut start stop restart update status logs
 
 install:
 	pip install -e .
@@ -26,3 +27,28 @@ doctor:
 
 docker:
 	docker compose up --build -d
+
+# --- running it on this machine ---------------------------------------
+# `make shortcut` installs the `awb` command; after that these are just
+# awb start / awb restart / awb status from anywhere.
+
+shortcut:
+	./deploy/awbctl install
+
+start:
+	./deploy/awbctl start
+
+stop:
+	./deploy/awbctl stop
+
+restart:
+	./deploy/awbctl restart
+
+update:
+	./deploy/awbctl update
+
+status:
+	./deploy/awbctl status
+
+logs:
+	./deploy/awbctl logs

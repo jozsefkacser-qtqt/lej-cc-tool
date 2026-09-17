@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+#
+# Start, stop and check the AWB tracker on this machine.
+#
+#   awb restart     stop it, start it, wait until it is actually up
+#   awb update      pull the latest code, then restart
+#   awb status      is it running, since when, on what version
+#   awb logs        follow the log
+#   awb stop        stop it
+#
+# Why a pid file rather than `pkill -f lej-cc`: that pattern matches any
+# process whose command line contains the string, which includes this script
+# (it lives in lej-cc-tool/) -- so the restart would kill itself halfway
+# through. The pid file is exact, and a process started the old way is
+# adopted on the first run so there is never a second copy posting to Slack.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/.venv/bin/lej-cc"
+PIDFILE="${LEJ_CC_PIDFILE:-$ROOT/data/lej-cc.pid}"
+LOG="${LEJ_CC_LOG:-$HOME/lej-cc.log}"
+#: The bot drains in-flight polls and says goodbye in Slack before exiting.
+STOP_TIMEOUT="${LEJ_CC_STOP_TIMEOUT:-25}"
+START_TIMEOUT="${LEJ_CC_START_TIMEOUT:-30}"
+MAX_LOG_BYTES="${LEJ_CC_MAX_LOG_BYTES:-10485760}"  # 10 MB
+
+GREEN=$'\033[32m'; RED=$'\033[31m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+[[ -t 1 ]] || { GREEN=""; RED=""; DIM=""; OFF=""; }
+
+die() { printf '%s✗ %s%s\n' "$RED" "$*" "$OFF" >&2; exit 1; }
+ok()  { printf '%s✓ %s%s\n' "$GREEN" "$*" "$OFF"; }
+dim() { printf '%s%s%s\n' "$DIM" "$*" "$OFF"; }
+
+# --- finding the process ------------------------------------------------
+
+alive() {
+    # `ps -p` rather than /proc so this behaves the same on a Mac.
+    ps -p "$1" -o args= 2>/dev/null | grep -q 'lej-cc'
+}
+
+running_pid() {
+    local pid
+    if [[ -f "$PIDFILE" ]]; then
+        pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+        if [[ -n "$pid" ]] && alive "$pid"; then
+            echo "$pid"
+            return 0
+        fi
+    fi
+    # Started by hand before this script existed, or the pid file was lost.
+    # Adopt it: starting a second bot would double every Slack message.
+    #
+    # Not anchored with ^: a console script runs as ".../python .../lej-cc",
+    # so the path is in the middle of the command line, not at the front.
+    # Ended with ( |$) so lej-cc-doctor, which shares the prefix, is not
+    # mistaken for the bot.
+    pid="$(pgrep -f -- "$BIN( |\$)" 2>/dev/null | head -1 || true)"
+    if [[ -n "$pid" ]]; then
+        mkdir -p "$(dirname "$PIDFILE")"
+        echo "$pid" > "$PIDFILE"
+        echo "$pid"
+        return 0
+    fi
+    rm -f "$PIDFILE"
+    return 1
+}
+
+version() {
+    git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo "unknown"
+}
+
+rotate_log() {
+    local size
+    size="$(stat -c %s "$LOG" 2>/dev/null || stat -f %z "$LOG" 2>/dev/null || echo 0)"
+    if (( size > MAX_LOG_BYTES )); then
+        mv "$LOG" "$LOG.1"
+        dim "rotated the log (kept as $LOG.1)"
+    fi
+}
+
+# --- commands -----------------------------------------------------------
+
+cmd_start() {
+    local pid
+    if pid="$(running_pid)"; then
+        ok "already running (pid $pid)"
+        return 0
+    fi
+    [[ -x "$BIN" ]] || die "$BIN is missing. Set it up with: cd $ROOT && make dev"
+    [[ -f "$ROOT/.env" ]] || die "$ROOT/.env is missing. Create it: cp .env.example .env"
+
+    mkdir -p "$(dirname "$PIDFILE")"
+    [[ -f "$LOG" ]] && rotate_log
+    local mark
+    mark="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
+
+    cd "$ROOT"
+    nohup "$BIN" >> "$LOG" 2>&1 &
+    pid=$!
+    echo "$pid" > "$PIDFILE"
+    printf 'starting'
+
+    local waited=0
+    while (( waited < START_TIMEOUT )); do
+        if ! alive "$pid"; then
+            printf '\n'
+            printf '%s\n' "$DIM--- last lines of $LOG ---$OFF"
+            tail -n 15 "$LOG" 2>/dev/null | sed "s/^/  /"
+            rm -f "$PIDFILE"
+            die "it started and then stopped. The lines above say why."
+        fi
+        if tail -n +"$((mark + 1))" "$LOG" 2>/dev/null | grep -q "lej-cc-tool ready"; then
+            printf '\n'
+            ok "running (pid $pid, $(version))"
+            dim "log: $LOG    ·    follow it with: awb logs"
+            return 0
+        fi
+        printf '.'
+        sleep 1
+        waited=$((waited + 1))
+    done
+    printf '\n'
+    # Up but quiet: Socket Mode may still be connecting. Not a failure.
+    ok "started (pid $pid) — no \"ready\" line yet after ${START_TIMEOUT}s"
+    dim "check with: awb logs"
+}
+
+cmd_stop() {
+    local pid
+    if ! pid="$(running_pid)"; then
+        ok "not running"
+        return 0
+    fi
+    printf 'stopping (pid %s)' "$pid"
+    kill -TERM "$pid" 2>/dev/null || true
+
+    local waited=0
+    while (( waited < STOP_TIMEOUT )) && alive "$pid"; do
+        printf '.'
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if alive "$pid"; then
+        printf '\n'
+        dim "it did not stop in ${STOP_TIMEOUT}s — forcing it"
+        kill -KILL "$pid" 2>/dev/null || true
+        sleep 1
+    else
+        printf '\n'
+    fi
+    rm -f "$PIDFILE"
+    ok "stopped"
+}
+
+cmd_restart() {
+    cmd_stop
+    cmd_start
+}
+
+cmd_update() {
+    if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
+        dim "there are local changes in $ROOT — pulling anyway, nothing is discarded"
+    fi
+    local before after
+    before="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")"
+    git -C "$ROOT" pull --ff-only || die "git pull failed — fix that first, nothing was restarted"
+    after="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")"
+
+    if [[ "$before" == "$after" ]]; then
+        dim "already up to date ($after)"
+    else
+        ok "updated $before → $after"
+        # A new dependency in a new version would otherwise fail at import.
+        "$ROOT/.venv/bin/pip" install -q -e "$ROOT" 2>/dev/null || \
+            dim "could not refresh dependencies — run: make dev"
+    fi
+    cmd_restart
+}
+
+cmd_status() {
+    local pid
+    if pid="$(running_pid)"; then
+        local since
+        since="$(ps -p "$pid" -o etime= 2>/dev/null | tr -d ' ')"
+        ok "running (pid $pid, up ${since:-?}, $(version))"
+    else
+        printf '%s✗ not running%s\n' "$RED" "$OFF"
+        dim "start it with: awb start"
+    fi
+    if [[ -f "$LOG" ]]; then
+        printf '\n%slast lines of %s%s\n' "$DIM" "$LOG" "$OFF"
+        tail -n 8 "$LOG" | sed "s/^/  /"
+    fi
+}
+
+cmd_logs() {
+    [[ -f "$LOG" ]] || die "no log at $LOG yet"
+    tail -n 40 -f "$LOG"
+}
+
+cmd_doctor() {
+    [[ -x "$ROOT/.venv/bin/lej-cc-doctor" ]] || die "run: cd $ROOT && make dev"
+    "$ROOT/.venv/bin/lej-cc-doctor" "$@"
+}
+
+cmd_install() {
+    local line="alias awb='$ROOT/deploy/awbctl'"
+    local rc="$HOME/.bashrc"
+    chmod +x "$ROOT/deploy/awbctl"
+    if grep -qF "$line" "$rc" 2>/dev/null; then
+        ok "the 'awb' shortcut is already installed"
+    else
+        # Any older alias pointing at a different checkout goes first.
+        if grep -q "^alias awb=" "$rc" 2>/dev/null; then
+            sed -i.bak "/^alias awb=/d" "$rc"
+            dim "replaced an existing 'awb' alias (backup: $rc.bak)"
+        fi
+        printf '\n# AWB customs tracker\n%s\n' "$line" >> "$rc"
+        ok "installed the 'awb' shortcut into $rc"
+    fi
+    printf '\nRun this once, or just open a new terminal:\n'
+    printf '  %ssource ~/.bashrc%s\n\n' "$GREEN" "$OFF"
+    usage
+}
+
+usage() {
+    cat <<USAGE
+Then, from anywhere:
+
+  awb restart     stop it, start it, wait until it is really up
+  awb update      pull the latest code, refresh deps, restart
+  awb status      running? since when? which version?
+  awb logs        follow the log (Ctrl-C to stop watching)
+  awb start       start it
+  awb stop        stop it (it says goodbye in Slack first)
+  awb doctor      check the configuration and credentials
+USAGE
+}
+
+case "${1:-status}" in
+    start)    cmd_start ;;
+    stop)     cmd_stop ;;
+    restart)  cmd_restart ;;
+    update)   cmd_update ;;
+    status)   cmd_status ;;
+    logs)     cmd_logs ;;
+    doctor)   shift; cmd_doctor "$@" ;;
+    install)  cmd_install ;;
+    -h|--help|help) usage ;;
+    *)        die "unknown command: $1 (try: awb help)" ;;
+esac
