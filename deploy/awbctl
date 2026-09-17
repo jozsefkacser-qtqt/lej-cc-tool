@@ -69,6 +69,19 @@ version() {
     git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo "unknown"
 }
 
+SPAWNED_PID=""
+
+spawn() {
+    # The background job must be a plain command, not `( ... ) &` or
+    # `a && b &`: those wrap it in a subshell that inherits -- and holds open
+    # -- whatever stdout the caller had, so `awb autostart` from a script
+    # would never return. Only the redirections below reach the bot.
+    cd "$ROOT"
+    nohup "$BIN" >> "$LOG" 2>&1 &
+    SPAWNED_PID=$!
+    echo "$SPAWNED_PID" > "$PIDFILE"
+}
+
 rotate_log() {
     local size
     size="$(stat -c %s "$LOG" 2>/dev/null || stat -f %z "$LOG" 2>/dev/null || echo 0)"
@@ -89,15 +102,21 @@ cmd_start() {
     [[ -x "$BIN" ]] || die "$BIN is missing. Set it up with: cd $ROOT && make dev"
     [[ -f "$ROOT/.env" ]] || die "$ROOT/.env is missing. Create it: cp .env.example .env"
 
-    mkdir -p "$(dirname "$PIDFILE")"
-    [[ -f "$LOG" ]] && rotate_log
+    mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$LOG")"
+    # Create the log before anything reads it. On a first ever start it does
+    # not exist, and a failed `< "$LOG"` redirect is reported before the
+    # 2>/dev/null on the same line takes effect -- so the error escapes, and
+    # whether it is fatal depends on the bash version. Deterministic instead.
+    : >> "$LOG"
+    if [[ -s "$LOG" ]]; then
+        rotate_log
+        : >> "$LOG"
+    fi
     local mark
-    mark="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
+    mark="$(wc -l < "$LOG")"
 
-    cd "$ROOT"
-    nohup "$BIN" >> "$LOG" 2>&1 &
-    pid=$!
-    echo "$pid" > "$PIDFILE"
+    spawn
+    pid="$SPAWNED_PID"
     printf 'starting'
 
     local waited=0
@@ -203,20 +222,56 @@ cmd_doctor() {
     "$ROOT/.venv/bin/lej-cc-doctor" "$@"
 }
 
+cmd_autostart() {
+    # Called from ~/.bashrc, so it has to be fast and silent when there is
+    # nothing to do -- nobody wants a terminal that pauses on every open.
+    running_pid >/dev/null 2>&1 && return 0
+    [[ -x "$BIN" && -f "$ROOT/.env" ]] || return 0
+
+    mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$LOG")"
+    : >> "$LOG"
+    spawn
+    # No waiting for the ready line here: that is up to half a minute, and
+    # this runs every time a terminal opens.
+    printf '%s↻ AWB tracker was not running — started it.%s %sawb status%s\n' \
+        "$GREEN" "$OFF" "$DIM" "$OFF"
+}
+
+BEGIN_MARK="# >>> AWB customs tracker >>>"
+END_MARK="# <<< AWB customs tracker <<<"
+
 cmd_install() {
-    local line="alias awb='$ROOT/deploy/awbctl'"
-    local rc="$HOME/.bashrc"
+    local rc="$HOME/.bashrc" autostart=1
+    [[ "${1:-}" == "--no-autostart" ]] && autostart=0
     chmod +x "$ROOT/deploy/awbctl"
-    if grep -qF "$line" "$rc" 2>/dev/null; then
-        ok "the 'awb' shortcut is already installed"
-    else
-        # Any older alias pointing at a different checkout goes first.
-        if grep -q "^alias awb=" "$rc" 2>/dev/null; then
-            sed -i.bak "/^alias awb=/d" "$rc"
-            dim "replaced an existing 'awb' alias (backup: $rc.bak)"
+    touch "$rc"
+
+    # Replace the whole block rather than appending to it, so installing
+    # twice -- or from a second checkout -- leaves one copy, not three.
+    if grep -qF "$BEGIN_MARK" "$rc"; then
+        sed -i.bak "/$BEGIN_MARK/,/$END_MARK/d" "$rc"
+        dim "replaced the previous block (backup: $rc.bak)"
+    elif grep -q "^alias awb=" "$rc"; then
+        sed -i.bak "/^alias awb=/d" "$rc"
+        dim "replaced an existing 'awb' alias (backup: $rc.bak)"
+    fi
+
+    {
+        printf '%s\n' "$BEGIN_MARK"
+        printf "alias awb='%s/deploy/awbctl'\n" "$ROOT"
+        if (( autostart )); then
+            # Interactive shells only, and never fatal: a moved checkout must
+            # not leave somebody with a terminal that errors on every open.
+            printf "[[ \$- == *i* && -x '%s/deploy/awbctl' ]] && '%s/deploy/awbctl' autostart || true\n" \
+                "$ROOT" "$ROOT"
         fi
-        printf '\n# AWB customs tracker\n%s\n' "$line" >> "$rc"
-        ok "installed the 'awb' shortcut into $rc"
+        printf '%s\n' "$END_MARK"
+    } >> "$rc"
+
+    ok "installed the 'awb' shortcut into $rc"
+    if (( autostart )); then
+        ok "and it will start the bot when you open a terminal, if it is not running"
+        dim "(don't want that? run: awbctl install --no-autostart)"
     fi
     printf '\nRun this once, or just open a new terminal:\n'
     printf '  %ssource ~/.bashrc%s\n\n' "$GREEN" "$OFF"
@@ -234,6 +289,10 @@ Then, from anywhere:
   awb start       start it
   awb stop        stop it (it says goodbye in Slack first)
   awb doctor      check the configuration and credentials
+
+Opening a terminal starts the bot if it is not running. That covers a
+Windows restart or a sleep, but not a PC that is switched off -- which is
+what the always-on server is for.
 USAGE
 }
 
@@ -244,8 +303,9 @@ case "${1:-status}" in
     update)   cmd_update ;;
     status)   cmd_status ;;
     logs)     cmd_logs ;;
+    autostart) cmd_autostart ;;
     doctor)   shift; cmd_doctor "$@" ;;
-    install)  cmd_install ;;
+    install)  shift; cmd_install "$@" ;;
     -h|--help|help) usage ;;
     *)        die "unknown command: $1 (try: awb help)" ;;
 esac
