@@ -84,12 +84,45 @@ at 10:15 stay 15 minutes apart. See `src/lej_cc/scheduler.py`.
 | `/awb status` | Is the tool running, and is it healthy. |
 | `/awb help` | Usage. |
 | `@bot 488-20744846` | Same as `/awb`, for people who prefer mentions. |
+| `936-02134215` on its own | In a channel named by `AUTODETECT_CHANNELS`, no command at all. |
+| A direct message to the bot | Send a bare number; there is nobody else in the conversation. |
 
 Buttons on each status card: **Refresh now**, **Stop tracking**.
 
 Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
+
+### Auto-detect: one channel where no command is needed
+
+Set `AUTODETECT_CHANNELS` to a channel ID and posting a bare AWB there
+starts tracking — no slash, no syntax to get wrong:
+
+```ini
+AUTODETECT_CHANNELS=C0AWBTRACK
+```
+
+> **Miroslav** 936-02134215 came in on LH1234, any news?
+> &nbsp;&nbsp;↳ **AWB Tracker** 🔎 Tracking `936-02134215` — first check running now.
+
+The confirmation is a **thread reply** under the message that named the
+number, so the channel does not carry two lines for every one somebody
+writes. If the AWB is already being tracked there, the bot says **nothing** —
+people name the same number all day, and "already being tracked" under every
+mention is what gets a bot muted. The card is already in the channel.
+
+**What makes this safe is the IATA check digit.** Only an 11-digit number
+whose check digit passes is acted on, and the pattern refuses to mine a
+longer number for an 11-digit substring — so the 20-digit consignee tracking
+numbers in the same conversation are ignored. Booking references are *not*
+auto-detected: they carry no checksum, so a pattern loose enough to catch
+`OyTM202608137666` also catches order numbers and file names. Type those as
+a command.
+
+`AUTODETECT_MAX_PER_MESSAGE` (default 10) caps one pasted manifest. Leaving
+`AUTODETECT_CHANNELS` empty keeps the feature off everywhere, which is the
+default — the channel has to be named deliberately. `/awb status` shows
+where it is on.
 
 ### When nothing happens
 

@@ -154,7 +154,7 @@ actually worth.
 | Idea | Size | Value |
 |---|---|---|
 | ~~Email trigger~~ (Part 2b) | — | **Done** — allowlist mandatory, SPF/DKIM required, dedup + rate limit. Needs a mailbox named to switch on. |
-| Auto-detect AWBs posted in a dedicated channel | 2 h | **High.** Zero friction; the code exists, it is switched off. |
+| ~~Auto-detect AWBs posted in a dedicated channel~~ | — | **Done** — per-channel, checksum-gated, silent on an AWB already tracked |
 | Bulk: paste or upload a list of AWBs | half a day | Medium — useful for a flight's worth at once |
 | Standing AWBs: track every AWB on a route automatically | 1 day | Medium, needs a source of "which AWBs" |
 | Slack shortcut / workflow step | half a day | Low |
@@ -228,8 +228,6 @@ Recording these so they are not re-litigated or quietly widened.
 4. ~~Lead-time analytics~~ — **done** (`/awb stats`).
 5. **Drive archive** of every export — cheap, and the audit trail this
    process should have had from day one.
-6. **Auto-detect AWBs in a dedicated channel** — the code exists and is
-   switched off; two hours and the friction reaches zero.
 
 Item 1 is half a day and is now the only thing on this list that changes
 how reliable the tool is. The rest change how much it is worth.

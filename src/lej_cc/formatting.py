@@ -358,6 +358,9 @@ def build_status_report(
     lines.append(
         "*Email:* " + ("on" if settings.email_enabled else "off (Slack only)")
     )
+    if settings.autodetect_channel_ids:
+        where = ", ".join(f"<#{c}>" for c in settings.autodetect_channel_ids)
+        lines.append(f"*Auto-detect:* on in {where} — post a number, no command needed")
     if settings.imap_enabled:
         seen = _hhmm(health.last_inbox_poll_at) if health.last_inbox_poll_at else "not yet"
         lines.append(

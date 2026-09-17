@@ -176,6 +176,28 @@ class Settings(BaseSettings):
                 return True
         return False
 
+    # --- auto-detect: an AWB posted with no command at all ---
+    #: Channel IDs where a bare, checksum-valid AWB starts tracking by
+    #: itself. Comma-separated; normally one dedicated channel. Empty means
+    #: the feature is off everywhere, which is the default: a bot that reacts
+    #: to numbers in a general channel is a bot people mute.
+    #:
+    #: Only the IATA check digit makes this safe. A random 11-digit string
+    #: has a one-in-seven chance of passing, but real numbers in a customs
+    #: channel -- invoice numbers, MRNs, consignee tracking numbers -- are
+    #: the wrong length or carry separators the pattern rejects.
+    autodetect_channels: str = ""
+    #: Most AWBs one pasted message may start. A forwarded manifest can name
+    #: dozens, and each one is a multi-minute export.
+    autodetect_max_per_message: int = 10
+
+    @property
+    def autodetect_channel_ids(self) -> list[str]:
+        return [c.strip() for c in self.autodetect_channels.split(",") if c.strip()]
+
+    def autodetect_in(self, channel: str) -> bool:
+        return channel in self.autodetect_channel_ids
+
     # --- escalation ---
     #: Shout when an AWB has not advanced for this long and is not finished.
     #: 0 disables. Measured from the last shipment that cleared, not from the
@@ -269,7 +291,12 @@ class RepeatSuppressingFilter(logging.Filter):
     def __init__(self, window_seconds: float = 60.0) -> None:
         super().__init__()
         self.window = window_seconds
-        self._last: dict[tuple[str, int, str], tuple[float, int]] = {}
+        # None, not 0.0, for "never seen". time.monotonic() counts from boot,
+        # so on a machine up for less than `window` a zero sentinel makes
+        # every first occurrence look like a repeat and swallows it -- during
+        # the first minute after a restart, which is the minute whose log
+        # lines somebody is actually reading.
+        self._last: dict[tuple[str, int, str], tuple[float | None, int]] = {}
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
@@ -279,9 +306,9 @@ class RepeatSuppressingFilter(logging.Filter):
 
         key = (record.name, record.levelno, message[:120])
         now = time.monotonic()
-        last_emit, suppressed = self._last.get(key, (0.0, 0))
+        last_emit, suppressed = self._last.get(key, (None, 0))
 
-        if now - last_emit < self.window:
+        if last_emit is not None and now - last_emit < self.window:
             self._last[key] = (last_emit, suppressed + 1)
             return False
 
@@ -294,7 +321,7 @@ class RepeatSuppressingFilter(logging.Filter):
         # frees nothing when the flood is of *distinct* messages, so this
         # keeps the most recent entries and drops the rest outright.
         if len(self._last) > 512:
-            newest = sorted(self._last.items(), key=lambda kv: kv[1][0], reverse=True)
+            newest = sorted(self._last.items(), key=lambda kv: kv[1][0] or 0.0, reverse=True)
             self._last = dict(newest[:256])
         return True
 

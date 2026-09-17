@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import logging
 import time
+from unittest import mock
 
 from lej_cc.config import RedactingFilter, configure_logging, scrub
 
@@ -134,3 +135,21 @@ def test_the_dedup_table_does_not_grow_without_bound():
     for i in range(700):
         flt.filter(logging.LogRecord("a", logging.INFO, __file__, 1, f"m{i}", None, None))
     assert len(flt._last) <= 512
+
+
+def test_the_first_line_survives_on_a_freshly_booted_machine():
+    """time.monotonic() counts from boot, so a 0.0 sentinel is not "never".
+
+    CI caught this: a runner that had been up for eleven seconds swallowed
+    the first copy of every distinct line, because 11 - 0.0 is inside a
+    60-second window. On the server that is the minute after a restart --
+    "online", "resuming 4 tracked AWBs", "could not reach PortGround" -- the
+    lines somebody is actually watching for.
+    """
+    from lej_cc.config import RepeatSuppressingFilter
+
+    flt = RepeatSuppressingFilter(window_seconds=60)
+    with mock.patch("time.monotonic", return_value=11.0):
+        record = logging.LogRecord("lej_cc", logging.INFO, __file__, 1, "online", None, None)
+        assert flt.filter(record) is True
+        assert flt.filter(record) is False  # and the second is still a repeat

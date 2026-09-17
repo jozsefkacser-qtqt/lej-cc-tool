@@ -183,3 +183,90 @@ def test_an_unexpected_slack_error_is_not_swallowed():
     client, respond = FakeClient("ratelimited"), FakeRespond()
     with pytest.raises(SlackApiError):
         say_in_channel(client, "C1", "hello", respond)
+
+
+# --- auto-detect: a bare AWB in one dedicated channel -------------------
+
+
+@pytest.fixture
+def store(tmp_path):
+    from lej_cc.store import JobStore
+
+    return JobStore(tmp_path / "jobs.sqlite3")
+
+
+def settings_with(**kwargs):
+    from lej_cc.config import Settings
+
+    base = dict(slack_bot_token="xoxb-x", slack_app_token="xapp-x", portground_api_key="k")
+    return Settings(**{**base, **kwargs})
+
+
+def test_auto_detect_is_off_everywhere_by_default():
+    """A bot that reacts to numbers in a general channel is a bot people mute."""
+    s = settings_with()
+    assert s.autodetect_channel_ids == []
+    assert not s.autodetect_in("C123")
+
+
+def test_auto_detect_is_confined_to_the_named_channels():
+    s = settings_with(autodetect_channels="C0AWB, C0LEJ")
+    assert s.autodetect_in("C0AWB")
+    assert s.autodetect_in("C0LEJ")
+    assert not s.autodetect_in("C0GENERAL")
+
+
+def test_a_bare_awb_is_picked_up(store):
+    from lej_cc.slack_app import autodetect_targets
+
+    fresh, seen = autodetect_targets(f"{AWB} came in on LH1234", "C1", store, 10)
+    assert fresh == [AWB]
+    assert seen == []
+
+
+def test_a_number_that_fails_the_check_digit_is_ignored(store):
+    """The checksum is the whole reason watching a channel is safe."""
+    from lej_cc.slack_app import autodetect_targets
+
+    assert autodetect_targets("invoice 93602134210 attached", "C1", store, 10) == ([], [])
+
+
+def test_a_longer_number_is_not_mined_for_an_awb(store):
+    """A 20-digit consignee tracking number contains 11-digit substrings."""
+    from lej_cc.slack_app import autodetect_targets
+
+    assert autodetect_targets("00340431234567890123", "C1", store, 10) == ([], [])
+
+
+def test_an_already_tracked_awb_is_reported_separately(store):
+    """People name the same AWB all day; a reply under each one is noise."""
+    from lej_cc.slack_app import autodetect_targets
+
+    store.create_job(AWB, "C1", "U1")
+    fresh, seen = autodetect_targets(f"any news on {AWB}?", "C1", store, 10)
+    assert fresh == []
+    assert seen == [AWB]
+
+
+def test_tracking_in_another_channel_does_not_count(store):
+    from lej_cc.slack_app import autodetect_targets
+
+    store.create_job(AWB, "C-OTHER", "U1")
+    fresh, _ = autodetect_targets(AWB, "C1", store, 10)
+    assert fresh == [AWB]
+
+
+def test_a_pasted_manifest_cannot_queue_unlimited_work(store):
+    from lej_cc.slack_app import autodetect_targets
+
+    text = " ".join(["93602134215", "48820744846", "93600333955", "93602927993"])
+    fresh, _ = autodetect_targets(text, "C1", store, 2)
+    assert len(fresh) == 2
+
+
+def test_a_booking_reference_is_not_auto_detected(store):
+    """No checksum, so in free text it could be anything: an order number,
+    a file name, half a signature. It still works when typed as a command."""
+    from lej_cc.slack_app import autodetect_targets
+
+    assert autodetect_targets("shipment OyTM202608137666 arrived", "C1", store, 10) == ([], [])

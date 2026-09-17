@@ -79,6 +79,12 @@ def build_app(
     app = App(token=settings.slack_bot_token, logger=log)
 
     help_text = HELP
+    if settings.autodetect_channel_ids:
+        where = ", ".join(f"<#{c}>" for c in settings.autodetect_channel_ids)
+        help_text += (
+            f"\n\nIn {where} you can skip the command entirely — *post the "
+            "number on its own* and tracking starts by itself."
+        )
     if settings.imap_enabled:
         help_text += (
             f"\n\nYou can also *email* `{settings.imap_user}` with the number in "
@@ -289,6 +295,38 @@ def build_app(
                 "could not hint at %s in %s: %s", user, channel, exc.response.get("error")
             )
 
+    def _autodetect(client: WebClient, event: dict, channel: str, user: str) -> bool:
+        """Track any AWB posted here without a command. True if it acted.
+
+        Silence when the AWB is already tracked is deliberate: people mention
+        the same number all day in a channel like this, and "already being
+        tracked" under every mention is the noise that gets a bot muted. The
+        card is already in the channel; that is the answer.
+        """
+        fresh, seen = autodetect_targets(
+            event.get("text", ""), channel, store, settings.autodetect_max_per_message
+        )
+        if not fresh:
+            return bool(seen)  # seen, already tracked, nothing to say
+
+        started: list[int] = []
+        replies = [start_tracking(m, channel, user, None, started) for m in fresh]
+        if not started:
+            return True
+        # Threaded under the message that named it, so the channel does not
+        # carry two lines for every one somebody writes.
+        try:
+            client.chat_postMessage(
+                channel=channel,
+                text="\n".join(replies),
+                thread_ts=event.get("thread_ts") or event.get("ts"),
+            )
+        except SlackApiError as exc:
+            log.error("auto-detect could not confirm in %s: %s", channel, exc)
+        log.info("auto-detected %s in %s from %s", ", ".join(fresh), channel, user)
+        scheduler.nudge()
+        return True
+
     # --- passive detection ----------------------------------------------
 
     @app.event("app_mention")
@@ -338,6 +376,12 @@ def build_app(
             scheduler.nudge()
             return
 
+        # In a channel set aside for this, a bare AWB is the command. The
+        # IATA check digit is what makes that safe: only a number that passes
+        # it is acted on, so nothing else in the message can start a job.
+        if settings.autodetect_in(channel) and _autodetect(client, event, channel, user):
+            return
+
         match = BOTCHED_COMMAND.match(text)
         if not match:
             return
@@ -365,6 +409,24 @@ def usable_identifiers(text: str) -> list[str]:
         if value not in found:
             found.append(value)
     return found
+
+
+def autodetect_targets(
+    text: str, channel: str, store: JobStore, limit: int
+) -> tuple[list[str], list[str]]:
+    """Split the AWBs in `text` into (not yet tracked here, already tracked).
+
+    Only checksum-valid master air waybills are considered. Booking
+    references are deliberately excluded: they carry no checksum, so a
+    pattern loose enough to catch one would also catch order numbers and
+    file names -- the same reasoning that keeps them out of email bodies.
+    """
+    found = extract_all(text)[:limit]
+    fresh: list[str] = []
+    seen: list[str] = []
+    for mawb in found:
+        (seen if store.find_active(mawb, channel) else fresh).append(mawb)
+    return fresh, seen
 
 
 def build_command_nudge(argument: str) -> tuple[str, list[dict]]:
