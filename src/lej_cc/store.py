@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     last_total            INTEGER,
     last_polled_at        TEXT,
     finished_at           TEXT,
-    finish_reason         TEXT
+    finish_reason         TEXT,
+    force_post            INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_due   ON jobs (state, next_run_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active
@@ -105,6 +106,10 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # Shipments customs took for examination. Defaults to 0, which is the
     # truth for every snapshot taken before the bucket existed.
     ("snapshots", "inspection", "INTEGER NOT NULL DEFAULT 0"),
+    # Somebody pressed Refresh. The next poll must say something even if
+    # nothing has changed -- silence in answer to a button press reads as a
+    # broken button, which is exactly how it was reported.
+    ("jobs", "force_post", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -151,6 +156,9 @@ class Job:
     #: what makes a second stall escalate again after the first was resolved.
     last_progress_at: datetime | None = None
     escalated_at: datetime | None = None
+    #: A human asked for this check, so the next poll reports whatever it
+    #: finds -- "nothing changed" included.
+    force_post: bool = False
 
     @property
     def is_first_poll(self) -> bool:
@@ -184,6 +192,7 @@ class Job:
             source=row["source"] or "slack",
             last_progress_at=_dt(row["last_progress_at"]),
             escalated_at=_dt(row["escalated_at"]),
+            force_post=bool(row["force_post"]) if "force_post" in row.keys() else False,
         )
 
     def stalled_for(self, now: datetime | None = None) -> timedelta:
@@ -350,7 +359,14 @@ class JobStore:
         increment_empty: bool = False,
         increment_failure: bool = False,
     ) -> None:
-        sets = ["next_run_at = ?", "leased_until = NULL", "last_polled_at = ?"]
+        sets = [
+            "next_run_at = ?",
+            "leased_until = NULL",
+            "last_polled_at = ?",
+            # The poll this reschedules has just reported, so any request for
+            # it to speak up has been honoured.
+            "force_post = 0",
+        ]
         params: list = [_iso(next_run_at), _iso(utcnow())]
 
         if increment_poll:
@@ -484,6 +500,35 @@ class JobStore:
         with self._lock:
             row = self._conn.execute(sql, params).fetchone()
         return row[0] if row else 0
+
+    def request_refresh(self, job_id: int) -> str:
+        """Ask for an immediate poll. Returns what actually happened.
+
+        "already_running" matters: clearing the lease while a poll is in
+        flight would start a second download of the same AWB, and two polls
+        racing means two contradictory updates in the channel. A check is
+        already on its way, so the honest answer is to say so.
+        """
+        now = utcnow()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT state, leased_until FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None or row["state"] != "active":
+                return "not_tracked"
+            leased = _dt(row["leased_until"])
+            if leased and leased > now:
+                # Still mark it, so the poll in flight reports even if the
+                # numbers have not moved.
+                self._conn.execute(
+                    "UPDATE jobs SET force_post = 1 WHERE id = ?", (job_id,)
+                )
+                return "already_running"
+            self._conn.execute(
+                "UPDATE jobs SET next_run_at = ?, force_post = 1 WHERE id = ?",
+                (_iso(now), job_id),
+            )
+        return "queued"
 
     def get_meta(self, key: str) -> str | None:
         with self._lock:

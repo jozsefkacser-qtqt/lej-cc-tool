@@ -206,7 +206,15 @@ class Tracker:
         settings = self.settings
 
         # Nothing moved and the operator asked for quiet updates: one short line.
-        if not changed and not is_final and not settings.post_unchanged_updates:
+        # A check somebody pressed a button for is the exception -- answering
+        # a request with silence is indistinguishable from a broken button,
+        # and that is exactly how it was reported.
+        if (
+            not changed
+            and not is_final
+            and not job.force_post
+            and not settings.post_unchanged_updates
+        ):
             log.info("%s unchanged at %.1f%%, staying quiet", job.mawb, snapshot.percent)
             return
 
@@ -229,6 +237,15 @@ class Tracker:
             if ts:
                 self.store.set_thread(job.id, ts)
                 job.thread_ts = ts
+        elif not changed and job.force_post:
+            # Asked for by hand: the full card, because the person pressing
+            # Refresh wants to see the state, not be told it is the same.
+            self.notifier.post(
+                job.channel_id,
+                text=text,
+                blocks=blocks,
+                thread_ts=job.thread_ts,
+            )
         elif not changed:
             self.notifier.post(
                 job.channel_id,

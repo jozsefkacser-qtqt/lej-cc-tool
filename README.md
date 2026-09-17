@@ -87,7 +87,15 @@ at 10:15 stay 15 minutes apart. See `src/lej_cc/scheduler.py`.
 | `936-02134215` on its own | In a channel named by `AUTODETECT_CHANNELS`, no command at all. |
 | A direct message to the bot | Send a bare number; there is nobody else in the conversation. |
 
-Buttons on each status card: **Refresh now**, **Stop tracking**.
+Buttons on each status card: **🔄 Check now** (green), **Stop tracking** (red).
+
+**Check now** answers immediately — privately, to whoever pressed it —
+because the download takes a couple of minutes and a button that produces
+nothing for that long reads as broken. The poll that follows then reports
+whatever it finds **even when nothing has changed**: a scheduled poll stays
+quiet on no news, but answering a button press with silence is
+indistinguishable from a broken button. If a check is already running, it
+says so rather than starting a second download of the same AWB.
 
 Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`

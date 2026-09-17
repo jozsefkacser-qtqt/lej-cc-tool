@@ -374,7 +374,10 @@ def build_status_blocks(
                     {
                         "type": "button",
                         "action_id": "awb_refresh",
-                        "text": {"type": "plain_text", "text": "🔄 Refresh now"},
+                        # Green: it is the safe, useful action on this card,
+                        # and it sat next to a red one looking like neither.
+                        "style": "primary",
+                        "text": {"type": "plain_text", "text": "🔄 Check now"},
                         "value": snapshot.mawb,
                     },
                     {

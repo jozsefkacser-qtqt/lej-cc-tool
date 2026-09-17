@@ -237,19 +237,45 @@ def build_app(
 
     @app.action("awb_refresh")
     def act_refresh(ack: Ack, body: dict, client: WebClient) -> None:
+        """Poll now, and say so straight away.
+
+        The download takes a couple of minutes, so without an immediate
+        answer the button looks dead -- and it looked deader still, because a
+        poll that found no change used to post nothing at all.
+        """
         ack()
         mawb = body["actions"][0]["value"]
         channel = body["channel"]["id"]
+        user = body["user"]["id"]
+        shown = format_display(mawb)
+
         job = store.find_active(mawb, channel)
-        if not job:
-            client.chat_postEphemeral(
-                channel=channel,
-                user=body["user"]["id"],
-                text=f"`{format_display(mawb)}` is no longer being tracked.",
+        outcome = store.request_refresh(job.id) if job else "not_tracked"
+
+        if outcome == "not_tracked":
+            message = (
+                f"`{shown}` is no longer being tracked here. "
+                f"Start it again with `/awb {shown}`."
             )
-            return
-        store.reschedule(job.id, utcnow(), increment_poll=False)
-        scheduler.nudge()
+        elif outcome == "already_running":
+            message = (
+                f"⏳ A check of `{shown}` is *already running* — PortGround is "
+                "building the export now. The result will appear in this "
+                "card's thread in a minute or two."
+            )
+        else:
+            message = (
+                f"🔄 Checking `{shown}` *now*. PortGround takes a couple of "
+                "minutes to build the export, so the result appears in this "
+                "card's thread shortly — even if nothing has changed."
+            )
+            scheduler.nudge()
+
+        log.info("refresh of %s requested by %s: %s", mawb, user, outcome)
+        try:
+            client.chat_postEphemeral(channel=channel, user=user, text=message)
+        except SlackApiError as exc:
+            log.warning("could not acknowledge the refresh: %s", exc.response.get("error"))
 
     @app.action("awb_track")
     def act_track(ack: Ack, body: dict, client: WebClient, respond: Respond) -> None:
