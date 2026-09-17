@@ -79,9 +79,22 @@ def main(argv: list[str] | None = None) -> int:
     if snapshot.generated_at:
         print(f"  data as of   {snapshot.generated_at:%Y-%m-%d %H:%M:%S %Z}")
 
+    if args.statuses:
+        # What Final Status values this export actually contains. The one
+        # question the card cannot answer, and the one you need before
+        # adding a value to status_map.yaml.
+        counts: dict[str, int] = {}
+        for row in snapshot.rows:
+            key = f"{row.final_status_raw!r} -> {row.status.value}"
+            counts[key] = counts.get(key, 0) + 1
+        print("  Final Status values:")
+        for key, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+            print(f"    {count:>6,}  {key}")
+
     if args.list_open:
-        for row in snapshot.open_rows:
-            print(f"    {row.hawb}  {row.final_status_raw}")
+        for row in snapshot.unsettled_rows:
+            mark = "  [INSPECTION]" if row.is_inspection else ""
+            print(f"    {row.hawb}  {row.final_status_raw}{mark}")
 
     return 0
 
