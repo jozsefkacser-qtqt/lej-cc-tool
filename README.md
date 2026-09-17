@@ -91,6 +91,24 @@ Starting and stopping are announced **to the channel** -- everyone watching
 needs to know an AWB is being tracked without asking who did it. `/awb list`
 and `/awb help` stay private to whoever typed them.
 
+### When nothing happens
+
+Silence is the one answer the bot must never give, so each of these now
+produces a visible reply. What each symptom means:
+
+| What you see | What happened | What fixes it |
+|---|---|---|
+| Your command appears in the channel as an **ordinary message** | You typed a space after the slash -- `/ awb 936-02134215`. Slack only treats `/word` as a command, so it posted your text instead. | The bot now answers with a private hint and a **Track it** button. Or retype it with no space. |
+| Slackbot says *"/AWB is not a valid slash command"* | Nothing was sent to the bot at all. | Type it in lower case: `/awb`. |
+| *"The app did not respond"* / *"dispatch_failed"* | The bot is not running -- the machine is asleep, or the process stopped. | Start it again. `/awb status` answers only when it is alive, so no answer is itself an answer. |
+| The confirmation appears, then nothing ever again | The bot is not a member of a private channel, so it cannot post updates. | It now refuses up front and tells you to `/invite @AWB Tracker`. |
+| `⚠️ … fails the IATA check-digit test` | One digit is wrong. | Check the number against the paperwork. |
+
+The bot can only answer the first of these if it can see channel messages,
+which needs the `channels:history` group of scopes in the manifest. It never
+acts on an ordinary message -- only on one that is unmistakably a command
+attempt, and it answers **only the person who typed it**.
+
 ## One row per AWB in a Google Sheet
 
 Optional, off until `GOOGLE_SHEET_ID` and `GOOGLE_CREDENTIALS_FILE` are
@@ -453,6 +471,18 @@ nothing to configure by hand:
 Socket Mode means no public URL and no inbound firewall rule. If the
 workspace requires app approval, step 4 goes to a workspace admin —
 creating the app in steps 1–3 does not.
+
+**Updating an app created before the `channels:history` scopes existed.**
+Without them the bot cannot see a command Slack posted as ordinary text, so
+`/ awb 936-02134215` stays silent. To add them to an app that already exists:
+
+1. <https://api.slack.com/apps> → your app → **App Manifest**
+2. Paste the current `slack-app-manifest.yaml` → **Save Changes**
+3. **Install App → Reinstall to Workspace** → approve the new permissions
+4. Copy the `xoxb-…` token again (it usually does not change, but check) and
+   restart the bot
+
+The app-level `xapp-…` token is unaffected.
 
 ### 2. Run
 

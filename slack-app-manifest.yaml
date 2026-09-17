@@ -34,11 +34,23 @@ oauth_config:
       - chat:write.public  # post in channels the bot was not invited to
       - files:write        # attach the downloaded workbook
       - app_mentions:read  # respond to @AWB Tracker 488-20744846
+      # Seeing channel messages is what lets the bot answer a command Slack
+      # turned into ordinary text -- "/ awb 936-02134215", with a space after
+      # the slash, is not a command, and without these the attempt is
+      # invisible to the bot and silent to the person who made it.
+      - channels:history   # public channels
+      - groups:history     # private channels the bot is in
+      - im:history         # direct messages to the bot
+      - mpim:history       # group direct messages
 
 settings:
   event_subscriptions:
     bot_events:
       - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
   interactivity:
     is_enabled: true       # required for the Refresh / Stop buttons
   socket_mode_enabled: true

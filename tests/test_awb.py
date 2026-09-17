@@ -101,3 +101,19 @@ def test_is_mawb_separates_the_two_shapes():
     assert is_mawb("48820744846")
     assert not is_mawb(REFERENCE)
     assert not is_mawb("4882074484")
+
+
+def test_an_ordinary_word_is_not_a_reference():
+    """`/awb 936-02134215 please check` must not track a shipment called "please".
+
+    Any six-letter word matched the old reference pattern, which turned a
+    politeness into a 48-hour polling job.
+    """
+    for word in ("please", "checking", "urgent", "status"):
+        with pytest.raises(InvalidAwbFormat):
+            normalize(word)
+
+
+def test_a_reference_needs_a_digit_but_letters_may_come_anywhere():
+    assert normalize("2026REF08") == "2026REF08"
+    assert normalize("OyTM202608137666") == "OyTM202608137666"

@@ -12,6 +12,7 @@ import re
 
 from slack_bolt import Ack, App, Respond
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 from . import formatting
 from .analytics import gather, summarise
@@ -27,6 +28,31 @@ log = logging.getLogger(__name__)
 #: Anything in the command that looks like an address is a recipient, so
 #: `/awb 488-20744846 candy@example.com` tracks it and mails her the updates.
 EMAIL_RE = re.compile(r"[^\s<>,;]+@[^\s<>,;]+\.[A-Za-z]{2,}")
+
+#: A message that Slack posted as ordinary text although the person plainly
+#: meant to run the command. `/ awb 936-02134215` -- a space after the slash --
+#: is not a command to Slack, so it lands in the channel and, until this
+#: existed, nothing answered it at all.
+BOTCHED_COMMAND = re.compile(r"^\s*[/\\]\s*m?awb\b(.*)", re.IGNORECASE | re.DOTALL)
+
+#: Verbs people reach for that the command does not have, and what to say.
+NEAR_MISSES = {
+    "ls": "list",
+    "lst": "list",
+    "active": "list",
+    "tracking": "list",
+    "show": "list",
+    "cancel": "stop",
+    "remove": "stop",
+    "delete": "stop",
+    "end": "stop",
+    "health": "status",
+    "alive": "status",
+    "online": "status",
+    "ping": "status",
+    "statistics": "stats",
+    "report": "stats",
+}
 
 
 HELP = (
@@ -60,8 +86,13 @@ def build_app(
         )
 
     def start_tracking(
-        mawb: str, channel: str, user: str | None, email_to: str | None = None
+        mawb: str,
+        channel: str,
+        user: str | None,
+        email_to: str | None = None,
+        started: list[int] | None = None,
     ) -> str:
+        started = started if started is not None else []
         existing = store.find_active(mawb, channel)
         if existing:
             percent = existing.last_percent
@@ -73,6 +104,7 @@ def build_app(
         job = store.create_job(mawb, channel, user, run_at=utcnow(), email_to=email_to)
         if job is None:  # lost a race against a duplicate command
             return f"⏳ `{format_display(mawb)}` is already being tracked here."
+        started.append(job.id)
         log.info("tracking %s in %s for %s (job %s)", mawb, channel, user, job.id)
         mailed = f" Updates also go to {email_to}." if email_to else ""
         return (
@@ -86,6 +118,7 @@ def build_app(
         channel: str,
         user: str | None,
         email_to: str | None = None,
+        started: list[int] | None = None,
     ) -> str:
         replies: list[str] = []
         for raw in raw_numbers:
@@ -97,17 +130,19 @@ def build_app(
             except InvalidAwbFormat as exc:
                 replies.append(f"🚫 {exc.user_message}")
                 continue
-            replies.append(start_tracking(mawb, channel, user, email_to))
+            replies.append(start_tracking(mawb, channel, user, email_to, started))
         return "\n".join(replies)
 
     # --- /awb ------------------------------------------------------------
 
     @app.command("/awb")
-    def cmd_awb(ack: Ack, command: dict, respond: Respond) -> None:
+    def cmd_awb(ack: Ack, command: dict, respond: Respond, client: WebClient) -> None:
         ack()
         text = (command.get("text") or "").strip()
         channel = command["channel_id"]
         user = command.get("user_id")
+        # People type the command name twice: `/awb awb 936-02134215`.
+        text = strip_command_echo(text)
 
         if not text or text.lower() in {"help", "-h", "?"}:
             respond(help_text)
@@ -156,19 +191,40 @@ def build_app(
             respond(_in_channel(_stop(store, argument or "", channel, user)))
             return
 
+        # A verb we do not have, typed where an AWB should be. Say so, rather
+        # than reporting that "status" is not a valid air waybill.
+        if verb in NEAR_MISSES:
+            respond(
+                f"🤔 There is no `/awb {verb}`. Did you mean "
+                f"`/awb {NEAR_MISSES[verb]}`?"
+            )
+            return
+
         emails = EMAIL_RE.findall(text)
         numbers = [t for t in text.split() if not EMAIL_RE.fullmatch(t)]
         allowed = [a for a in emails if settings.email_allowed(a)]
         refused = [a for a in emails if a not in allowed]
 
-        reply = handle_numbers(numbers or [text], channel, user, ",".join(allowed) or None)
+        started: list[int] = []
+        reply = handle_numbers(
+            numbers or [text], channel, user, ",".join(allowed) or None, started
+        )
         if refused:
             reply += (
                 f"\n🚫 Not mailing {', '.join(f'`{a}`' for a in refused)} — outside the "
                 f"allowed domains (`{settings.email_allowed_domains}`). "
                 "These updates carry customs data, so recipients are restricted."
             )
-        respond(_in_channel(reply))
+        if not started:
+            # Nothing was started, so nothing will follow. The reply is the
+            # whole answer and goes back over the response_url, which works
+            # even where the bot cannot post.
+            respond(_in_channel(reply))
+            return
+        if not say_in_channel(client, channel, reply, respond):
+            for job_id in started:
+                store.finish(job_id, "stopped", "bot cannot post in this channel")
+            return
         scheduler.nudge()  # after responding: the first poll takes minutes
 
     # --- buttons ---------------------------------------------------------
@@ -189,6 +245,26 @@ def build_app(
         store.reschedule(job.id, utcnow(), increment_poll=False)
         scheduler.nudge()
 
+    @app.action("awb_track")
+    def act_track(ack: Ack, body: dict, client: WebClient, respond: Respond) -> None:
+        """Start tracking from the "did you mean" nudge."""
+        ack()
+        mawb = body["actions"][0]["value"]
+        channel = body["channel"]["id"]
+        user = body["user"]["id"]
+        started: list[int] = []
+        reply = start_tracking(mawb, channel, user, None, started)
+        if not started:
+            respond(reply)  # already tracked, or lost a race
+            return
+        if not say_in_channel(client, channel, reply, respond):
+            for job_id in started:
+                store.finish(job_id, "stopped", "bot cannot post in this channel")
+            return
+        # Clear the nudge: it has been acted on and would only confuse later.
+        respond({"delete_original": True})
+        scheduler.nudge()
+
     @app.action("awb_stop")
     def act_stop(ack: Ack, body: dict, client: WebClient) -> None:
         ack()
@@ -198,6 +274,20 @@ def build_app(
         message = _stop(store, mawb, channel, stopped_by=user)
         # Visible to the channel: stopping is a state change others rely on.
         client.chat_postMessage(channel=channel, text=message)
+
+    def _nudge_about_command(
+        client: WebClient, channel: str, user: str, argument: str
+    ) -> None:
+        """Ephemeral: only the person who mistyped it sees this."""
+        text, blocks = build_command_nudge(argument)
+        try:
+            client.chat_postEphemeral(channel=channel, user=user, text=text, blocks=blocks)
+        except SlackApiError as exc:
+            # In a channel the bot is not a member of, an ephemeral is refused.
+            # Nothing else to try: a public message would be worse than silence.
+            log.warning(
+                "could not hint at %s in %s: %s", user, channel, exc.response.get("error")
+            )
 
     # --- passive detection ----------------------------------------------
 
@@ -217,13 +307,130 @@ def build_app(
         scheduler.nudge()
 
     @app.event("message")
-    def on_message(event: dict) -> None:
-        # Subscribed so Bolt does not log unhandled-request warnings. Passive
-        # tracking of every channel message is intentionally NOT enabled --
-        # turn it on per channel once the team has agreed to it.
-        return
+    def on_message(event: dict, client: WebClient) -> None:
+        """Answer a command Slack turned into an ordinary message.
+
+        `/ awb 936-02134215` -- one space after the slash -- is not a command
+        to Slack, so it is posted as text and, before this existed, absolutely
+        nothing happened: no error, no hint, no trace in the log. The person
+        who typed it has no way to tell that from a bot that is switched off.
+
+        Passive tracking of *every* message is still deliberately not enabled.
+        This only answers a message that is unmistakably an attempt to run the
+        command, and it answers only the person who typed it.
+        """
+        # Never react to ourselves, to other bots, or to edits and deletions:
+        # a bot answering its own message is how a loop starts.
+        if event.get("bot_id") or event.get("subtype"):
+            return
+        text = event.get("text") or ""
+        channel = event.get("channel", "")
+        user = event.get("user")
+        if not channel or not user:
+            return
+
+        # A direct message to the bot needs no ceremony: there is nobody else
+        # in the conversation, so the intent of a bare number is not in doubt.
+        if event.get("channel_type") == "im":
+            numbers = extract_all(text) or [t for t in text.split() if len(t) > 5]
+            reply = handle_numbers(numbers, channel, user) if numbers else help_text
+            client.chat_postMessage(channel=channel, text=reply)
+            scheduler.nudge()
+            return
+
+        match = BOTCHED_COMMAND.match(text)
+        if not match:
+            return
+        _nudge_about_command(client, channel, user, match.group(1))
 
     return app
+
+
+def strip_command_echo(text: str) -> str:
+    """Drop a label people repeat after the command: `/awb AWB 936-…`."""
+    return re.sub(r"^(?:awb|mawb|nr\.?|no\.?)[\s:]+", "", text, flags=re.IGNORECASE)
+
+
+def usable_identifiers(text: str) -> list[str]:
+    """Every identifier in `text` that could actually be tracked."""
+    candidates = extract_all(text) or [
+        t for t in text.split() if len(t) > 5 and not EMAIL_RE.fullmatch(t)
+    ]
+    found: list[str] = []
+    for raw in candidates:
+        try:
+            value = normalize(raw)
+        except (AwbChecksumFailed, InvalidAwbFormat):
+            continue
+        if value not in found:
+            found.append(value)
+    return found
+
+
+def build_command_nudge(argument: str) -> tuple[str, list[dict]]:
+    """The "that was not a command" hint, and a button if we can act on it."""
+    usable = usable_identifiers(argument)
+    lines = [
+        "👋 That looked like a command, but Slack posted it as a normal "
+        "message — so nothing was tracked.",
+        "",
+        "A slash command takes *no space after the slash*:",
+        "",
+        "  ✅  `/awb 936-02134215`",
+        "  🚫  `/ awb 936-02134215`  ← space after the slash",
+    ]
+    if not usable:
+        lines += ["", "Type `/awb help` to see everything it understands."]
+        text = "\n".join(lines)
+        return text, [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+
+    lines += ["", f"Want me to start `{format_display(usable[0])}` now?"]
+    text = "\n".join(lines)
+    return text, [
+        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": f"Track {format_display(usable[0])}",
+                        "emoji": True,
+                    },
+                    "style": "primary",
+                    "action_id": "awb_track",
+                    "value": usable[0],
+                }
+            ],
+        },
+    ]
+
+
+def say_in_channel(client: WebClient, channel: str, text: str, respond) -> bool:  # noqa: ANN001
+    """Post to the channel, and prove the later updates can get there.
+
+    The slash-command reply travels back over a response_url, which works in
+    a channel the bot cannot post in -- so a confirmation could appear and
+    then every status update after it vanish silently. Sending the
+    confirmation with the same call the tracker uses turns that into an error
+    somebody can act on, while they are still there to act on it.
+    """
+    try:
+        client.chat_postMessage(channel=channel, text=text)
+    except SlackApiError as exc:
+        code = exc.response.get("error", "")
+        if code not in {"channel_not_found", "not_in_channel", "is_archived"}:
+            raise
+        log.warning("cannot post in %s: %s", channel, code)
+        respond(
+            "🚫 *I can't post in this channel*, so you would never see the updates.\n"
+            "Invite me first — type `/invite @AWB Tracker` here — then run the "
+            "command again."
+            + (" _(This channel is archived.)_" if code == "is_archived" else "")
+        )
+        return False
+    return True
 
 
 def _in_channel(text: str) -> dict:

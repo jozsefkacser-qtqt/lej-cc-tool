@@ -27,7 +27,11 @@ _HAS_LETTER = re.compile(r"[A-Za-z]")
 #: Booking / consolidation references such as OyTM202608137666. Not air
 #: waybills and not checksummed, so there is nothing to validate beyond the
 #: shape -- PortGround decides whether the reference exists.
-REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{5,31}")
+#:
+#: At least one digit is required. Without that rule any six-letter word is
+#: a valid reference, and `/awb 936-02134215 please check` quietly starts a
+#: 48-hour polling job for a shipment called "please".
+REFERENCE_PATTERN = re.compile(r"(?=[A-Za-z0-9._-]*\d)[A-Za-z0-9][A-Za-z0-9._-]{5,31}")
 
 
 def is_mawb(value: str) -> bool:
@@ -66,9 +70,10 @@ def normalize(raw: str, *, verify_checksum: bool = True) -> str:
         raise InvalidAwbFormat(
             f"{text!r} is not a usable reference",
             user_message=(
-                f"`{raw}` doesn't look like an AWB or a booking reference. "
-                "Expected either 11 digits (`488-20744846`) or a reference "
-                "like `OyTM202608137666`."
+                f"`{raw}` doesn't look like an AWB or a booking reference.\n"
+                "• A master air waybill is 11 digits: `488-20744846`\n"
+                "• A booking reference mixes letters and digits, at least 6 "
+                "characters: `OyTM202608137666`"
             ),
         )
 
