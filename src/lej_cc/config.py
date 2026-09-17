@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     #: channel -- invoice numbers, MRNs, consignee tracking numbers -- are
     #: the wrong length or carry separators the pattern rejects.
     autodetect_channels: str = ""
+    #: Post a short "how to use this" message in each auto-detect channel on
+    #: startup and keep it pinned. Rewritten in place on later restarts, never
+    #: reposted -- a bot that pins a fresh copy every restart is a bot whose
+    #: pins nobody reads.
+    pin_explainer: bool = True
     #: Most AWBs one pasted message may start. A forwarded manifest can name
     #: dozens, and each one is a multi-minute export.
     autodetect_max_per_message: int = 10

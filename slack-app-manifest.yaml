@@ -42,6 +42,9 @@ oauth_config:
       - groups:history     # private channels the bot is in
       - im:history         # direct messages to the bot
       - mpim:history       # group direct messages
+      # Pins the short "post a number here" explainer at the top of an
+      # auto-detect channel, so the instruction is where people already are.
+      - pins:write
 
 settings:
   event_subscriptions:

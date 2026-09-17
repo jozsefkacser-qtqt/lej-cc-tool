@@ -17,6 +17,7 @@ from slack_sdk.http_retry.builtin_handlers import (
 from . import version
 from .config import Settings, configure_logging
 from .emailer import EmailNotifier
+from .explainer import ensure_pinned
 from .health import Heartbeat
 from .inbox import EmailTrigger
 from .parser import StatusMapper
@@ -102,6 +103,10 @@ def main() -> int:
             notifier.post(settings.status_channel, text=text)
         except Exception:  # noqa: BLE001
             log.exception("could not post the status announcement")
+
+    if settings.pin_explainer:
+        for channel in settings.autodetect_channel_ids:
+            ensure_pinned(notifier.client, store, channel, running_version)
 
     resumed = f", resuming {len(active)} tracked AWB(s)" if active else ""
     announce(

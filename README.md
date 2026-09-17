@@ -119,6 +119,14 @@ auto-detected: they carry no checksum, so a pattern loose enough to catch
 `OyTM202608137666` also catches order numbers and file names. Type those as
 a command.
 
+On startup the bot posts a short **pinned explainer** at the top of the
+channel — "post a number here and it is tracked" — so the instruction is
+where people already are. It is written once and then **rewritten in place**
+on every later restart: one pin, always current with the version running,
+however often the bot restarts. Delete it and the next start posts a new
+one. `PIN_EXPLAINER=false` turns it off; it needs the `pins:write` scope,
+and without that scope the message is still posted, just not pinned.
+
 `AUTODETECT_MAX_PER_MESSAGE` (default 10) caps one pasted manifest. Leaving
 `AUTODETECT_CHANNELS` empty keeps the feature off everywhere, which is the
 default — the channel has to be named deliberately. `/awb status` shows

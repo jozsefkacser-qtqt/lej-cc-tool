@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS processed_emails (
     outcome    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_processed_sender ON processed_emails (sender, seen_at);
+
+-- Small facts the bot needs to remember across restarts that are not about
+-- a job: which message it pinned in which channel, so a restart updates
+-- that message instead of posting another one.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 #: Columns added after the first release. Applied to existing databases by
@@ -471,6 +479,21 @@ class JobStore:
         with self._lock:
             row = self._conn.execute(sql, params).fetchone()
         return row[0] if row else 0
+
+    def get_meta(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)", (key, value)
+            )
+
+    def clear_meta(self, key: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM meta WHERE key = ?", (key,))
 
     def recent_snapshots(self, job_id: int, since: datetime):  # noqa: ANN201
         """Snapshots for a job taken since `since`, oldest first."""
