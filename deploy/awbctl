@@ -34,15 +34,39 @@ dim() { printf '%s%s%s\n' "$DIM" "$*" "$OFF"; }
 # --- finding the process ------------------------------------------------
 
 alive() {
-    # `ps -p` rather than /proc so this behaves the same on a Mac.
-    ps -p "$1" -o args= 2>/dev/null | grep -q 'lej-cc'
+    # kill -0 asks the kernel, which cannot be truncated or misparsed.
+    #
+    # This used to grep `ps -p PID -o args=` for "lej-cc", and that was wrong
+    # in a way that only showed up on a long path: ps cuts its output at 80
+    # columns when stdout is not a terminal, so a checkout deep enough to
+    # push the name past that made a running bot look dead -- `status` would
+    # say "not running" and `start` would then start a second one, which is
+    # the exact duplicate the pid file exists to prevent.
+    kill -0 "$1" 2>/dev/null || return 1
+    # A child nobody waited on lingers as a zombie, and kill -0 succeeds on
+    # one. Not alive.
+    local state
+    state="$(ps -p "$1" -o stat= 2>/dev/null || true)"
+    [[ "${state# }" != Z* ]]
+}
+
+is_our_bot() {
+    # Only needed where a pid could have been reused by something else.
+    # /proc is exact; `ps -ww` disables the column limit on everything else.
+    local args=""
+    if [[ -r "/proc/$1/cmdline" ]]; then
+        args="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null || true)"
+    else
+        args="$(ps -ww -p "$1" -o args= 2>/dev/null || true)"
+    fi
+    [[ "$args" == *lej-cc* ]]
 }
 
 running_pid() {
     local pid
     if [[ -f "$PIDFILE" ]]; then
         pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-        if [[ -n "$pid" ]] && alive "$pid"; then
+        if [[ -n "$pid" ]] && alive "$pid" && is_our_bot "$pid"; then
             echo "$pid"
             return 0
         fi
@@ -119,7 +143,11 @@ cmd_start() {
     pid="$SPAWNED_PID"
     printf 'starting'
 
-    local waited=0
+    # A beat before the first look: between the fork and the exec the child
+    # has not run a line of the bot yet, and judging it then is judging
+    # nothing.
+    sleep 1
+    local waited=1
     while (( waited < START_TIMEOUT )); do
         if ! alive "$pid"; then
             printf '\n'

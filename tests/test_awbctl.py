@@ -167,6 +167,41 @@ def test_stopping_twice_is_harmless(install, cleanup):
     assert run(root, env, "stop").returncode == 0
 
 
+def test_a_long_checkout_path_does_not_look_dead(tmp_path, cleanup):
+    """`ps -o args=` cuts at 80 columns when stdout is not a terminal.
+
+    The liveness check used to grep that output for "lej-cc", so a checkout
+    deep enough to push the name past the cut made a running bot look dead:
+    status said "not running", and start would then have started a second
+    one -- two bots, every Slack message doubled. CI found it because this
+    file's longest test name made pytest's own temp path long enough.
+    """
+    deep = tmp_path
+    for part in ("a_directory_with_quite_a_long_name", "and_another_one_here"):
+        deep = deep / part
+    root = deep / "lej-cc-tool"
+    (root / "deploy").mkdir(parents=True)
+    (root / ".venv" / "bin").mkdir(parents=True)
+    shutil.copy(REPO / "deploy" / "awbctl", root / "deploy" / "awbctl")
+    binary = root / ".venv" / "bin" / "lej-cc"
+    binary.write_text(FAKE_BOT)
+    binary.chmod(0o755)
+    (root / ".env").write_text("SLACK_BOT_TOKEN=x\n")
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path),
+        "LEJ_CC_LOG": str(tmp_path / "bot.log"),
+        "LEJ_CC_START_TIMEOUT": "10",
+        "LEJ_CC_STOP_TIMEOUT": "3",
+    }
+    cleanup.append(root)
+    assert len(f"/usr/bin/env bash {binary}") > 80  # past where ps would cut
+
+    assert run(root, env, "start").returncode == 0
+    assert "not running" not in run(root, env, "status").stdout
+    assert len(pids_running(root)) == 1
+
+
 # --- the ways it can go wrong -------------------------------------------
 
 
