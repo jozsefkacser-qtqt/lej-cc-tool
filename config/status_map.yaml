@@ -22,12 +22,21 @@ not_cleared:
 # here can move it, and an AWB waiting on three inspections should not read
 # as an AWB with three shipments nobody has touched.
 #
-# Any value containing the word "inspection" is treated as one even if it is
-# not listed here, and logged so the exact wording can be added. Add the real
-# value below once you have seen it; the keyword fallback is a safety net,
-# not a substitute.
+# IMPORTANT: PortGround does not put this in Final Status. It leaves Final
+# Status at "not cleared" and records the examination in the **External
+# Statuses** column, so the parser reads that column too and upgrades a
+# "not cleared" row to INSPECTION when it names one. "cleared" always wins:
+# a shipment released after an examination keeps the note in its history.
+#
+# Observed on live AWBs (93602928693, OyTM202608277404, OyTM202608274493):
+#   inspection        physical examination
+#   inspection_doc    document check
+# External Statuses is plural and can list several values in one cell, so
+# any value *containing* the word is treated as an inspection even when it
+# is not listed here, and logged once so the exact wording can be added.
 inspection:
   - inspection
+  - inspection_doc
   - marked for inspection
   - customs inspection
   - physical inspection

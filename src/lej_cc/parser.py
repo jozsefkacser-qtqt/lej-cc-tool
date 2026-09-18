@@ -89,26 +89,62 @@ class StatusMapper:
     def _key(value: Any) -> str:
         return " ".join(str(value or "").split()).casefold()
 
-    def map(self, raw: Any) -> ClearanceStatus:
+    def _names_inspection(self, value: Any) -> bool:
+        """Does this cell say customs has taken the shipment?
+
+        Both an exact match from status_map.yaml and the bare word, because
+        External Statuses holds a list -- "inspection" can arrive alongside
+        other values in one cell.
+        """
+        key = self._key(value)
+        if not key:
+            return False
+        if self._lookup.get(key) is ClearanceStatus.INSPECTION:
+            return True
+        return "inspection" in key or "beschau" in key
+
+    def map(self, raw: Any, external: Any = None) -> ClearanceStatus:
+        """The bucket for one row, from Final Status and External Statuses.
+
+        Final Status decides, with one exception: PortGround records an
+        examination in **External Statuses** and leaves Final Status at "not
+        cleared". Read literally that makes a shipment customs is holding
+        look like one nobody has worked, which is the whole distinction the
+        inspection bucket exists to draw.
+
+        "cleared" always wins. A shipment released after an examination keeps
+        the inspection in its external history, and it is cleared.
+        """
         key = self._key(raw)
         known = self._lookup.get(key)
-        if known is not None:
-            return known
-        # PortGround's exact wording for an examination is not pinned down --
-        # "marked for inspection", "customs inspection", "inspection" have all
-        # been reported. Rather than miscount whichever one arrives, anything
-        # naming an inspection is treated as one, and said out loud the first
-        # time so the precise value can be added to status_map.yaml.
-        if "inspection" in key or "beschau" in key:
-            if key not in self._keyword_matched:
-                self._keyword_matched.add(key)
-                log.info(
-                    "treating Final Status %r as INSPECTION (matched on the word "
-                    "'inspection'). Add it to status_map.yaml to make it explicit.",
-                    str(raw),
+
+        if known is None:
+            # PortGround's exact wording is not pinned down -- "marked for
+            # inspection", "customs inspection" have all been reported.
+            # Rather than miscount whichever arrives, anything naming an
+            # inspection is treated as one, and said out loud the first time
+            # so the precise value can be added to status_map.yaml.
+            if self._names_inspection(raw):
+                self._say_once(
+                    "Final Status", raw,
+                    "matched on the word 'inspection'. Add it to status_map.yaml.",
                 )
+                return ClearanceStatus.INSPECTION
+            return ClearanceStatus.OTHER
+
+        if known is ClearanceStatus.NOT_CLEARED and self._names_inspection(external):
+            self._say_once(
+                "External Statuses", external,
+                "so this row counts as INSPECTION rather than open work.",
+            )
             return ClearanceStatus.INSPECTION
-        return ClearanceStatus.OTHER
+        return known
+
+    def _say_once(self, column: str, value: Any, why: str) -> None:
+        key = f"{column}:{self._key(value)}"
+        if key not in self._keyword_matched:
+            self._keyword_matched.add(key)
+            log.info("%s %r names an inspection — %s", column, str(value), why)
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> StatusMapper:
@@ -250,7 +286,8 @@ def parse_workbook(
                 seen_mawbs.add(row_mawb)
 
             raw_status = _clean(cell(row, COL_FINAL_STATUS))
-            status = mapper.map(raw_status)
+            raw_external = _clean(cell(row, "External Statuses"))
+            status = mapper.map(raw_status, raw_external)
             if status is ClearanceStatus.OTHER:
                 key = raw_status or "(blank)"
                 unknown[key] = unknown.get(key, 0) + 1
@@ -261,7 +298,7 @@ def parse_workbook(
                     mawb=row_mawb or expected_mawb,
                     status=status,
                     final_status_raw=raw_status,
-                    external_status=_clean(cell(row, "External Statuses")),
+                    external_status=raw_external,
                     clearance_time=_parse_dt(cell(row, "Clearance Time")),
                     check_in=_parse_dt(cell(row, "Check-In")),
                     declaration_sent=_parse_dt(cell(row, "Declaration Sent")),

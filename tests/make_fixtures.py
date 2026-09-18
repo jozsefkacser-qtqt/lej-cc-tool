@@ -21,7 +21,9 @@ HEADER = [
 ]
 
 
-def _row(i: int, mawb: str, status: str, items: int = 2) -> list[str | None]:
+def _row(
+    i: int, mawb: str, status: str, items: int = 2, external: str | None = None
+) -> list[str | None]:
     hawb = f"0034043{i:013d}"
     cleared = status == "cleared"
     return [
@@ -32,7 +34,7 @@ def _row(i: int, mawb: str, status: str, items: int = 2) -> list[str | None]:
         mawb,
         "2026-05-20 09:11:58" if cleared else None,
         None,
-        "pre_cleared" if cleared else None,
+        external if external else ("pre_cleared" if cleared else None),
         status,
         "2026-05-18 08:02:31" if cleared else None,
         "2026-05-18 08:04:13" if cleared else None,
@@ -45,13 +47,18 @@ def _row(i: int, mawb: str, status: str, items: int = 2) -> list[str | None]:
     ]
 
 
-def write(path: Path, mawb: str, statuses: list[str]) -> None:
+def write(
+    path: Path, mawb: str, statuses: list[str], externals: list[str | None] | None = None
+) -> None:
+    """`statuses` are Final Status values; `externals` the External Statuses
+    beside them, which is where PortGround actually records an examination."""
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Worksheet"
     sheet.append(HEADER)
-    for i, status in enumerate(statuses, start=1):
-        sheet.append(_row(i, mawb, status))
+    externals = externals or [None] * len(statuses)
+    for i, (status, external) in enumerate(zip(statuses, externals, strict=True), start=1):
+        sheet.append(_row(i, mawb, status, external=external))
     # Fixed creation stamp so `generated_at` parsing is deterministic.
     workbook.properties.created = datetime(2026, 9, 7, 15, 5, 33)
     workbook.save(path)
@@ -70,6 +77,15 @@ def write_all(out_dir: Path) -> Path:
     write(out_dir / "partial.xlsx", "48820744846", ["cleared"] * 6 + ["not cleared"] * 4)
     write(out_dir / "unknown_status.xlsx", "48820744846", ["cleared"] * 3 + ["blocked", "seized"])
     write(out_dir / "empty.xlsx", "48820744846", [])
+    # What a real export looks like when customs is holding some of it:
+    # Final Status stays "not cleared" and the examination is recorded in
+    # External Statuses, in two wordings seen on live AWBs.
+    write(
+        out_dir / "inspection.xlsx",
+        "93602928693",
+        ["cleared"] * 6 + ["not cleared"] * 4,
+        [None] * 6 + ["inspection", "inspection_doc", "handling, inspection", None],
+    )
     # A file whose rows belong to a different master AWB.
     write(out_dir / "wrong_mawb.xlsx", "12345678901", ["cleared"] * 3)
     return out_dir

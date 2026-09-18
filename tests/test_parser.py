@@ -175,3 +175,45 @@ def test_a_reference_that_resolves_to_itself_is_not_reported(data_dir, tmp_path)
     snap = parse_workbook(path, REFERENCE)
     assert snap.total == 3
     assert snap.resolved_mawbs == []
+
+
+# --- an examination is recorded in External Statuses --------------------
+
+
+def test_an_inspection_is_read_from_the_external_column(data_dir):
+    """The one that mattered: PortGround leaves Final Status at "not cleared"
+    and records the examination in External Statuses. Read literally, a
+    shipment customs is holding looks like one nobody has worked -- and a
+    live AWB sat at 98.9% with twelve of these counted as open."""
+    snapshot = parse_workbook(data_dir / "inspection.xlsx", "93602928693")
+
+    assert snapshot.cleared == 6
+    assert snapshot.inspection == 3
+    assert snapshot.open_count == 1
+
+
+@pytest.mark.parametrize("external", ["inspection", "inspection_doc", "handling, inspection"])
+def test_every_wording_seen_on_a_live_awb_is_recognised(external):
+    """inspection and inspection_doc both appear in real exports, and the
+    column is plural -- one cell can list several values."""
+    mapper = StatusMapper({"cleared": ["cleared"], "not_cleared": ["not cleared"]})
+    assert mapper.map("not cleared", external) is ClearanceStatus.INSPECTION
+
+
+def test_cleared_beats_an_inspection_in_its_history():
+    """A shipment released after an examination keeps the external note."""
+    mapper = StatusMapper({"cleared": ["cleared"], "not_cleared": ["not cleared"]})
+    assert mapper.map("cleared", "inspection") is ClearanceStatus.CLEARED
+
+
+@pytest.mark.parametrize("external", [None, "", "pre_cleared", "handling"])
+def test_an_ordinary_external_status_leaves_the_row_open(external):
+    mapper = StatusMapper({"cleared": ["cleared"], "not_cleared": ["not cleared"]})
+    assert mapper.map("not cleared", external) is ClearanceStatus.NOT_CLEARED
+
+
+def test_an_unknown_final_status_stays_visible_whatever_the_external_says():
+    """OTHER means "we do not recognise this" and must not be quietly
+    reclassified -- it is the signal that the mapping needs extending."""
+    mapper = StatusMapper({"cleared": ["cleared"]})
+    assert mapper.map("seized", "inspection") is ClearanceStatus.OTHER

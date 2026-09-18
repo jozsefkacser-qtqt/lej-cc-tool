@@ -458,14 +458,25 @@ prints `:cc-done:` as literal text instead of rendering it.
 
 ### Which status values count as inspections
 
-`config/status_map.yaml` lists them, and **any value containing the word
-"inspection" is treated as one even if it is not listed** — PortGround's
-exact wording is not pinned down, and miscounting it as open is the failure
-this exists to prevent. Each new wording is logged once so you can add it:
+**It is not the `Final Status` column.** PortGround leaves that at
+`not cleared` and records the examination in **`External Statuses`**:
+
+| Final Status | External Statuses | Counted as |
+|---|---|---|
+| `cleared` | anything | Cleared — release wins over a note in the history |
+| `not cleared` | `inspection`, `inspection_doc`, `handling, inspection` | **Under inspection** |
+| `not cleared` | anything else, or empty | Open |
+| unrecognised | anything | Open, and flagged — an unknown status must stay visible |
+
+Both wordings above are from live AWBs. The column is plural and can list
+several values in one cell, so **any value containing the word "inspection"
+counts even if it is not in `config/status_map.yaml`** — miscounting an
+examination as open work is the failure this exists to prevent. Each new
+wording is logged once so you can add it:
 
 ```
-INFO treating Final Status 'Marked for inspection' as INSPECTION (matched on
-     the word 'inspection'). Add it to status_map.yaml to make it explicit.
+INFO External Statuses 'inspection_doc' names an inspection — so this row
+     counts as INSPECTION rather than open work.
 ```
 
 To see what a real export actually contains:
