@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     post_unchanged_updates: bool = False
     #: Attach the workbook only when something changed (plus first + final).
     attach_file_on_change_only: bool = True
+    #: How the progress is drawn on the card. "grid" is ten rows of ten, one
+    #: cell per percent; "bar" is the older single row of ten. Ten cells
+    #: cannot draw 1.1% as less than a tenth of the bar, which is why the
+    #: grid is the default -- it is more accurate, not only larger.
+    progress_style: str = "grid"
     #: List open HAWBs in the message only while there are at most this many.
     #: Beyond it the numbers are a wall of text nobody reads, and the chase
     #: sheet is the better answer.

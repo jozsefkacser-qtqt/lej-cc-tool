@@ -78,6 +78,66 @@ def progress_bar(
     )
 
 
+#: A ten-by-ten grid of cells, one per percent. Ten cells cannot show 1.1%
+#: as anything smaller than a tenth of the bar, which drew twelve held
+#: shipments out of 1,079 as if they were a tenth of the AWB. A hundred
+#: cells cost nothing to render and tell the truth to the nearest percent.
+GRID_ROWS = 10
+GRID_COLS = 10
+
+
+def progress_grid(
+    percent: float,
+    inspection: float = 0.0,
+    rows: int = GRID_ROWS,
+    cols: int = GRID_COLS,
+) -> str:
+    """The same three blocks as the bar, laid out as a square.
+
+    Ten lines of ten, which fits a phone as well as a desktop -- a single
+    row of a hundred would wrap differently on every screen.
+    """
+    total = rows * cols
+    cleared_cells = _cells(percent, total)
+    settled_cells = _cells(percent + inspection, total)
+    inspection_cells = max(0, min(total - cleared_cells, settled_cells - cleared_cells))
+    if inspection > 0 and inspection_cells == 0 and cleared_cells < total:
+        inspection_cells = 1
+    empty = total - cleared_cells - inspection_cells
+    cells = (
+        bar_colour(percent) * cleared_cells
+        + BAR_INSPECTION * inspection_cells
+        + BAR_EMPTY * empty
+    )
+    return "\n".join(cells[i : i + cols] for i in range(0, total, cols))
+
+
+def progress_visual(percent: float, inspection: float = 0.0, style: str = "grid") -> str:
+    return (
+        progress_grid(percent, inspection)
+        if style == "grid"
+        else progress_bar(percent, inspection=inspection)
+    )
+
+
+def breakdown_lines(snapshot: Snapshot) -> str:
+    """Cleared, held, and the sum of the two, one per line.
+
+    The colours match the cells above, so the grid needs no legend. With
+    nothing under inspection the sum would only repeat the first line, so
+    there is just the one number.
+    """
+    if not snapshot.inspection:
+        return f"{bar_colour(snapshot.percent)}  *{snapshot.percent:.1f}%* cleared"
+    return "\n".join(
+        [
+            f"{bar_colour(snapshot.percent)}  *{snapshot.percent:.1f}%* cleared",
+            f"{BAR_INSPECTION}  *{snapshot.percent_inspection:.1f}%* inspection",
+            f"　  *= {snapshot.percent_settled:.1f}% completed*",
+        ]
+    )
+
+
 def _hhmm(value: datetime | None) -> str:
     return value.astimezone(LOCAL_TZ).strftime("%H:%M") if value else "—"
 
@@ -175,30 +235,21 @@ def build_status_blocks(
     poll_count: int = 0,
     tracking_since: datetime | None = None,
     forecast=None,  # noqa: ANN001 - a forecast.Forecast
+    style: str = "grid",
 ) -> list[dict]:
     """The status card. `is_final` switches the wording to a closing note."""
     mawb = format_display(snapshot.mawb)
     done = snapshot.is_complete
     held = snapshot.inspection
 
-    if done and held:
-        headline = f"✅ {mawb} — cleared, {held:,} under inspection"
-    elif done:
-        headline = f"✅ {mawb} — cleared"
+    # The state of the clearance leads, because that is what someone
+    # scanning the channel is looking for; the number identifies which one.
+    if done:
+        headline = f"✅ CC Finished — {mawb}"
     elif is_final:
-        headline = f"⚠️ {mawb} — stopped, still open"
+        headline = f"⚠️ CC Stopped — {mawb}, still open"
     else:
-        headline = f"📦 {mawb} — customs clearance"
-
-    # The two numbers add up to how much of the AWB is settled, and the bar
-    # fills to match. Both are printed when there is an inspection, because
-    # "98.9%" alone reads as an AWB that is stuck one shipment short.
-    headline_percent = f"*{snapshot.percent:.1f}%*"
-    if held:
-        headline_percent += (
-            f"  cleared  ·  *{snapshot.percent_inspection:.1f}%* inspection"
-            f"  =  *{snapshot.percent_settled:.1f}%*"
-        )
+        headline = f"📦 CC In progress — {mawb}"
 
     blocks: list[dict] = [
         {"type": "header", "text": {"type": "plain_text", "text": headline, "emoji": True}},
@@ -206,12 +257,12 @@ def build_status_blocks(
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": (
-                    f"{progress_bar(snapshot.percent, inspection=snapshot.percent_inspection)}"
-                    f"  {headline_percent}"
+                "text": progress_visual(
+                    snapshot.percent, snapshot.percent_inspection, style
                 ),
             },
         },
+        {"type": "section", "text": {"type": "mrkdwn", "text": breakdown_lines(snapshot)}},
     ]
 
     fields = [

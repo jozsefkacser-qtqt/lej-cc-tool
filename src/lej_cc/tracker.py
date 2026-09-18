@@ -228,6 +228,7 @@ class Tracker:
             is_final=is_final,
             poll_count=job.poll_count + 1,
             tracking_since=job.created_at,
+            style=settings.progress_style,
         )
         text = formatting.summary_line(snapshot)
 

@@ -231,9 +231,24 @@ def test_a_clean_awb_says_nothing_about_inspections():
     assert "inspection" not in body.lower()
 
 
-def test_the_headline_does_not_claim_a_clean_finish():
+def test_finished_never_reads_as_fully_cleared():
+    """The header says CC Finished, which is true -- nothing here can move
+    it. The breakdown directly under it has to stop that being read as
+    "everything was released"."""
     blocks = build_status_blocks(snap(cleared=1067, inspection=12))
-    assert "under inspection" in blocks[0]["text"]["text"]
+    breakdown = blocks[2]["text"]["text"]
+
+    assert blocks[0]["text"]["text"].startswith("✅ CC Finished")
+    assert "98.9%* cleared" in breakdown
+    assert "1.1%* inspection" in breakdown
+    assert "100.0% completed" in breakdown
+
+
+def test_the_breakdown_is_one_line_when_nothing_is_held():
+    """Three lines summing to the first number would just be noise."""
+    breakdown = build_status_blocks(snap(cleared=5, open_=5))[2]["text"]["text"]
+    assert breakdown.count("\n") == 0
+    assert "50.0%* cleared" in breakdown
 
 
 def test_a_new_inspection_is_reported_as_a_change():
@@ -242,3 +257,50 @@ def test_a_new_inspection_is_reported_as_a_change():
     diff = diff_snapshots(before, current)
     assert diff.newly_inspected == ["ins00000000000000000"]
     assert diff.has_changes
+
+
+# --- the grid ------------------------------------------------------------
+
+
+def test_the_grid_is_ten_rows_of_ten():
+    from lej_cc.formatting import progress_grid
+
+    rows = progress_grid(50.0).split("\n")
+    assert len(rows) == 10
+    assert all(len(r) == 10 for r in rows)
+
+
+def test_a_hundred_cells_tell_the_truth_a_tenth_could_not():
+    """Twelve held shipments of 1,079 is 1.1%. Ten cells had to draw that as
+    a whole cell -- a tenth of the AWB, nine times too much."""
+    from lej_cc.formatting import progress_bar, progress_grid
+
+    assert progress_bar(98.9, inspection=1.1).count(BAR_INSPECTION) == 1  # 10%
+    assert progress_grid(98.9, 1.1).count(BAR_INSPECTION) == 2  # 2%
+
+
+def test_the_grid_fills_completely_only_when_everything_is_settled():
+    from lej_cc.formatting import progress_grid
+
+    assert "⬜" not in progress_grid(98.9, 1.1)
+    assert "⬜" in progress_grid(99.9)  # 0.1% short is not finished
+
+
+def test_a_single_held_shipment_still_shows_in_the_grid():
+    from lej_cc.formatting import progress_grid
+
+    assert BAR_INSPECTION in progress_grid(99.95, 0.05)
+
+
+def test_the_grid_always_has_exactly_a_hundred_cells():
+    from lej_cc.formatting import progress_grid
+
+    for cleared, held in ((0, 0), (100, 0), (0, 100), (33.3, 33.3), (98.9, 1.1), (0.4, 0.3)):
+        assert len(progress_grid(cleared, held).replace("\n", "")) == 100
+
+
+def test_the_operator_can_go_back_to_the_ten_cell_bar():
+    from lej_cc.formatting import progress_visual
+
+    assert "\n" not in progress_visual(50.0, 10.0, style="bar")
+    assert progress_visual(50.0, 10.0, style="grid").count("\n") == 9

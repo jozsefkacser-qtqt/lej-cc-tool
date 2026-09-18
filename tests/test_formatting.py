@@ -51,18 +51,32 @@ def test_no_progress_colour_is_red():
     assert "🟥" not in {colour for _, colour in BAR_COLOURS}
 
 
-def test_card_leads_with_the_number():
+def test_card_leads_with_the_state_then_the_number():
+    """What someone scanning the channel wants first is whether it is done;
+    the number says which AWB it is."""
     blocks = build_status_blocks(snap(1544, 1578))
+    header = blocks[0]["text"]["text"]
+
     assert blocks[0]["type"] == "header"
-    assert "936-02927993" in blocks[0]["text"]["text"]
-    assert "97.8%" in blocks[1]["text"]["text"]
+    assert header.startswith("📦 CC In progress")
+    assert "936-02927993" in header
+    assert "97.8%" in blocks[2]["text"]["text"]
+
+
+def test_a_finished_awb_says_so_in_the_header():
+    assert build_status_blocks(snap(10, 10))[0]["text"]["text"].startswith("✅ CC Finished")
+
+
+def test_a_stopped_awb_is_not_called_finished():
+    blocks = build_status_blocks(snap(3, 10), is_final=True)
+    assert blocks[0]["text"]["text"].startswith("⚠️ CC Stopped")
 
 
 def test_completed_card_drops_the_buttons_and_the_open_list():
     blocks = build_status_blocks(snap(10, 10))
     types = [b["type"] for b in blocks]
     assert "actions" not in types
-    assert "cleared" in blocks[0]["text"]["text"]
+    assert "CC Finished" in blocks[0]["text"]["text"]
 
 
 def test_open_count_includes_unrecognised_statuses():
