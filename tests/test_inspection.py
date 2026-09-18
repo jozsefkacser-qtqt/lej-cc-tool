@@ -304,3 +304,97 @@ def test_the_operator_can_go_back_to_the_ten_cell_bar():
 
     assert "\n" not in progress_visual(50.0, 10.0, style="bar")
     assert progress_visual(50.0, 10.0, style="grid").count("\n") == 9
+
+
+# --- the slim rendering --------------------------------------------------
+
+
+def test_slim_is_two_rows_of_fifty():
+    from lej_cc.formatting import progress_slim
+
+    body = progress_slim(50.0).strip("`").strip()
+    rows = body.split("\n")
+    assert len(rows) == 2
+    assert all(len(r) == 50 for r in rows)
+
+
+def test_slim_keeps_the_same_one_percent_resolution_as_the_grid():
+    from lej_cc.formatting import SLIM_INSPECTION, progress_grid, progress_slim
+
+    assert progress_slim(98.9, 1.1).count(SLIM_INSPECTION) == 2
+    assert progress_grid(98.9, 1.1).count(BAR_INSPECTION) == 2
+
+
+def test_slim_is_monospace_so_slack_does_not_reflow_it():
+    from lej_cc.formatting import progress_slim
+
+    drawn = progress_slim(30.0, 10.0)
+    assert drawn.startswith("```\n") and drawn.endswith("\n```")
+
+
+def test_slim_distinguishes_the_three_states_without_colour():
+    """Slack cannot colour text, so density has to carry the meaning."""
+    from lej_cc.formatting import SLIM_CLEARED, SLIM_INSPECTION, SLIM_OPEN, progress_slim
+
+    drawn = progress_slim(40.0, 20.0)
+    assert len({SLIM_CLEARED, SLIM_INSPECTION, SLIM_OPEN}) == 3
+    for glyph in (SLIM_CLEARED, SLIM_INSPECTION, SLIM_OPEN):
+        assert glyph in drawn
+
+
+def test_every_style_agrees_about_what_a_percentage_looks_like():
+    """One place decides the split, so the three renderings cannot drift."""
+    from lej_cc.formatting import progress_bar, progress_grid, progress_slim
+
+    for cleared, held in ((98.9, 1.1), (54.0, 21.0), (0.0, 0.0), (100.0, 0.0)):
+        settled_grid = 100 - progress_grid(cleared, held).count("⬜")
+        settled_slim = 100 - progress_slim(cleared, held).count("░")
+        assert settled_grid == settled_slim
+        assert len(progress_bar(cleared, inspection=held)) == 10
+
+
+# --- your own cells ------------------------------------------------------
+
+
+def test_custom_cells_replace_the_built_in_ones():
+    """A workspace with narrow custom emoji gets slim *and* coloured."""
+    from lej_cc.formatting import progress_grid
+
+    drawn = progress_grid(50.0, 10.0, override=(":g:", ":r:", ":o:"))
+    assert drawn.count(":g:") == 50
+    assert drawn.count(":r:") == 10
+    assert "🟩" not in drawn
+
+
+def test_the_legend_uses_whatever_the_bar_is_drawn_with():
+    """A green chip beside a monochrome bar explains nothing."""
+    from lej_cc.formatting import SLIM_CLEARED, breakdown_lines
+
+    s = snap(cleared=54, inspection=21, open_=25)
+    assert SLIM_CLEARED in breakdown_lines(s, "slim")
+    assert "🟨" in breakdown_lines(s, "grid")
+    assert ":g:" in breakdown_lines(s, "grid", override=(":g:", ":r:", ":o:"))
+
+
+def test_partly_set_overrides_fall_back_per_cell():
+    from lej_cc.formatting import cells_for
+
+    assert cells_for(50.0, (":g:", "", "")) == (":g:", BAR_INSPECTION, "⬜")
+    assert cells_for(50.0, None) == ("🟨", BAR_INSPECTION, "⬜")
+
+
+def test_custom_cells_never_land_inside_a_code_fence():
+    """A code block prints `:cc-done:` as text instead of rendering it, so
+    the style has to give way to the emoji somebody uploaded."""
+    from lej_cc.formatting import progress_visual
+
+    drawn = progress_visual(50.0, 10.0, style="slim", override=(":g:", ":r:", ":o:"))
+    assert "```" not in drawn
+    assert drawn.count(":g:") == 50
+
+
+def test_a_multi_character_cell_is_never_cut_at_a_row_break():
+    from lej_cc.formatting import progress_grid
+
+    for row in progress_grid(50.0, 10.0, override=(":g:", ":r:", ":o:")).split("\n"):
+        assert row.count(":") == 20  # ten cells, two colons each

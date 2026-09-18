@@ -415,13 +415,40 @@ So it gets its own bucket, and the numbers add up:
 1,067 of 1,079        0            12  (1.1%)
 ```
 
-One cell per percent is what makes the two red squares honest. With ten
+One cell per percent is what makes the two held cells honest. With ten
 cells, 1.1% has to occupy a whole one — drawing twelve held shipments out of
 1,079 as a tenth of the AWB, nine times larger than they are.
 
+### Three styles
+
+`PROGRESS_STYLE` picks how that is drawn. All three use the same arithmetic,
+so they cannot disagree about what a percentage looks like.
+
+| | Looks like | |
+|---|---|---|
+| **`slim`** *(default)* | `██████████████████████▓▓░░░░░░` | Two rows of fifty monospace blocks. A fifth of the height, one cell per percent, **no colour** — Slack cannot colour text, only emoji. Solid is cleared, dark is held, light is open. |
+| `grid` | 🟩🟩🟩🟥⬜⬜ ×10 rows | Ten rows of ten coloured emoji. Same resolution, five times taller. |
+| `bar` | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 | One row of ten. Compact, but 1.1% has to take a whole cell. |
+
+### Slim *and* coloured
+
+Those are exclusive only because every standard Slack emoji gets the same
+square box. Narrow **custom** emoji escape that: upload three thin images to
+your workspace and name them in `.env`.
+
+```ini
+PROGRESS_CELL_CLEARED=:cc-done:
+PROGRESS_CELL_INSPECTION=:cc-hold:
+PROGRESS_CELL_OPEN=:cc-open:
+```
+
+Any of the three can be left empty to keep the built-in cell. Custom cells
+force the grid layout whatever `PROGRESS_STYLE` says, because a code fence
+prints `:cc-done:` as literal text instead of rendering it.
+
 | | |
 |---|---|
-| The grid | Ten rows of ten, one cell per percent. Green cleared, **red inspection**, white still open. No progress colour is red any more — a barely-started AWB and a fully-inspected one used to render identically. `PROGRESS_STYLE=bar` goes back to a single row of ten. |
+| The bar | One cell per percent, in whichever of three styles `PROGRESS_STYLE` names — see below. No progress colour is red any more: red means customs has it, and a barely-started AWB used to render identically to a fully-inspected one. |
 | Completeness | `cleared + inspection == total` means **complete**: tracking stops, because re-checking every 30 minutes does not change a customs decision. The final card names the held shipments and tells you how to re-check. |
 | `CC Completed` in the sheet | Filled **only when every line genuinely cleared**. A shipment still being examined has not completed customs clearance, whatever the tracker has stopped doing about it. |
 | The chase sheet | Still lists them, shaded and sorted to the bottom — not chaseable, but a row that disappears is a row nobody looks at again. |

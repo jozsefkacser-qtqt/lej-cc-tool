@@ -54,8 +54,38 @@ def _cells(percent: float, width: int) -> int:
     return max(1, filled) if percent > 0 else 0
 
 
+def _split(total: int, percent: float, inspection: float) -> tuple[int, int, int]:
+    """How many cells go to cleared, to inspection, and to still open.
+
+    One place, so the bar, the grid and the slim rendering can never
+    disagree about what a percentage looks like.
+    """
+    cleared = _cells(percent, total)
+    settled = _cells(percent + inspection, total)
+    # Never let rounding give inspection more room than there is left, and
+    # never let it hide a cleared cell.
+    held = max(0, min(total - cleared, settled - cleared))
+    if inspection > 0 and held == 0 and cleared < total:
+        held = 1  # one held shipment must still be visible
+    return cleared, held, total - cleared - held
+
+
+def cells_for(percent: float, override: tuple[str, str, str] | None = None) -> tuple[str, str, str]:
+    """The three cell characters: cleared, inspection, open.
+
+    An override lets a workspace swap in its own narrow custom emoji --
+    the only way to have a slim bar that is still coloured, since Slack
+    gives every standard emoji the same square box.
+    """
+    cleared, held, open_ = override or ("", "", "")
+    return (cleared or bar_colour(percent), held or BAR_INSPECTION, open_ or BAR_EMPTY)
+
+
 def progress_bar(
-    percent: float, width: int = BAR_WIDTH, inspection: float = 0.0
+    percent: float,
+    width: int = BAR_WIDTH,
+    inspection: float = 0.0,
+    override: tuple[str, str, str] | None = None,
 ) -> str:
     """Ten cells: cleared, then under inspection, then still open.
 
@@ -63,19 +93,9 @@ def progress_bar(
     is the number that decides whether anyone has to do anything; keeping
     them as separate colours says how much of that is actually released.
     """
-    cleared_cells = _cells(percent, width)
-    settled_cells = _cells(percent + inspection, width)
-    # Never let rounding give inspection more room than there is left, and
-    # never let it hide a cleared cell.
-    inspection_cells = max(0, min(width - cleared_cells, settled_cells - cleared_cells))
-    if inspection > 0 and inspection_cells == 0 and cleared_cells < width:
-        inspection_cells = 1  # one held shipment must still be visible
-    empty = width - cleared_cells - inspection_cells
-    return (
-        bar_colour(percent) * cleared_cells
-        + BAR_INSPECTION * inspection_cells
-        + BAR_EMPTY * empty
-    )
+    cleared, held, empty = _split(width, percent, inspection)
+    glyphs = cells_for(percent, override)
+    return glyphs[0] * cleared + glyphs[1] * held + glyphs[2] * empty
 
 
 #: A ten-by-ten grid of cells, one per percent. Ten cells cannot show 1.1%
@@ -91,6 +111,7 @@ def progress_grid(
     inspection: float = 0.0,
     rows: int = GRID_ROWS,
     cols: int = GRID_COLS,
+    override: tuple[str, str, str] | None = None,
 ) -> str:
     """The same three blocks as the bar, laid out as a square.
 
@@ -98,41 +119,82 @@ def progress_grid(
     row of a hundred would wrap differently on every screen.
     """
     total = rows * cols
-    cleared_cells = _cells(percent, total)
-    settled_cells = _cells(percent + inspection, total)
-    inspection_cells = max(0, min(total - cleared_cells, settled_cells - cleared_cells))
-    if inspection > 0 and inspection_cells == 0 and cleared_cells < total:
-        inspection_cells = 1
-    empty = total - cleared_cells - inspection_cells
-    cells = (
-        bar_colour(percent) * cleared_cells
-        + BAR_INSPECTION * inspection_cells
-        + BAR_EMPTY * empty
-    )
-    return "\n".join(cells[i : i + cols] for i in range(0, total, cols))
+    cleared, held, empty = _split(total, percent, inspection)
+    glyphs = cells_for(percent, override)
+    # A list, not a string: a custom emoji cell is ten characters long, and
+    # slicing the joined text would cut `:cc-done:` in half at the row break.
+    cells = [glyphs[0]] * cleared + [glyphs[1]] * held + [glyphs[2]] * empty
+    return "\n".join("".join(cells[i : i + cols]) for i in range(0, total, cols))
 
 
-def progress_visual(percent: float, inspection: float = 0.0, style: str = "grid") -> str:
-    return (
-        progress_grid(percent, inspection)
-        if style == "grid"
-        else progress_bar(percent, inspection=inspection)
-    )
+#: The slim rendering: monospace block characters inside a code fence.
+#: Slack gives no way to colour text, so a bar that is genuinely narrow
+#: cannot also be coloured -- unless a workspace uploads narrow custom
+#: emoji, which `override` exists for. Density carries the meaning instead:
+#: solid is cleared, dark is held, light is still open.
+SLIM_CLEARED = "█"
+SLIM_INSPECTION = "▓"
+SLIM_OPEN = "░"
+SLIM_COLS = 50
+SLIM_ROWS = 2
 
 
-def breakdown_lines(snapshot: Snapshot) -> str:
+def progress_slim(
+    percent: float,
+    inspection: float = 0.0,
+    cols: int = SLIM_COLS,
+    rows: int = SLIM_ROWS,
+    override: tuple[str, str, str] | None = None,
+) -> str:
+    """Two rows of fifty, still one cell per percent, a fraction of the height."""
+    total = cols * rows
+    cleared, held, empty = _split(total, percent, inspection)
+    glyphs = override or (SLIM_CLEARED, SLIM_INSPECTION, SLIM_OPEN)
+    cells = [glyphs[0]] * cleared + [glyphs[1]] * held + [glyphs[2]] * empty
+    body = "\n".join("".join(cells[i : i + cols]) for i in range(0, total, cols))
+    return f"```\n{body}\n```"
+
+
+def progress_visual(
+    percent: float,
+    inspection: float = 0.0,
+    style: str = "slim",
+    override: tuple[str, str, str] | None = None,
+) -> str:
+    if style == "bar":
+        return progress_bar(percent, inspection=inspection, override=override)
+    # Custom cells are emoji, and a code fence prints `:cc-done:` as literal
+    # text rather than rendering it. Someone who has gone to the trouble of
+    # uploading narrow emoji wants to see them, so the grid carries them.
+    if style == "grid" or override:
+        return progress_grid(percent, inspection, override=override)
+    return progress_slim(percent, inspection, override=override)
+
+
+def breakdown_lines(
+    snapshot: Snapshot,
+    style: str = "slim",
+    override: tuple[str, str, str] | None = None,
+) -> str:
     """Cleared, held, and the sum of the two, one per line.
 
-    The colours match the cells above, so the grid needs no legend. With
-    nothing under inspection the sum would only repeat the first line, so
-    there is just the one number.
+    Each line is marked with the very cell used to draw it above, so the
+    bar needs no separate legend whichever style is in use. With nothing
+    under inspection the sum would only repeat the first line, so there is
+    just the one number.
     """
+    if style == "slim" and not override:
+        done, held = f"`{SLIM_CLEARED}`", f"`{SLIM_INSPECTION}`"
+    else:
+        glyphs = cells_for(snapshot.percent, override)
+        done, held = glyphs[0], glyphs[1]
+
     if not snapshot.inspection:
-        return f"{bar_colour(snapshot.percent)}  *{snapshot.percent:.1f}%* cleared"
+        return f"{done}  *{snapshot.percent:.1f}%* cleared"
     return "\n".join(
         [
-            f"{bar_colour(snapshot.percent)}  *{snapshot.percent:.1f}%* cleared",
-            f"{BAR_INSPECTION}  *{snapshot.percent_inspection:.1f}%* inspection",
+            f"{done}  *{snapshot.percent:.1f}%* cleared",
+            f"{held}  *{snapshot.percent_inspection:.1f}%* inspection",
             f"　  *= {snapshot.percent_settled:.1f}% completed*",
         ]
     )
@@ -235,7 +297,8 @@ def build_status_blocks(
     poll_count: int = 0,
     tracking_since: datetime | None = None,
     forecast=None,  # noqa: ANN001 - a forecast.Forecast
-    style: str = "grid",
+    style: str = "slim",
+    cells: tuple[str, str, str] | None = None,
 ) -> list[dict]:
     """The status card. `is_final` switches the wording to a closing note."""
     mawb = format_display(snapshot.mawb)
@@ -258,11 +321,14 @@ def build_status_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": progress_visual(
-                    snapshot.percent, snapshot.percent_inspection, style
+                    snapshot.percent, snapshot.percent_inspection, style, cells
                 ),
             },
         },
-        {"type": "section", "text": {"type": "mrkdwn", "text": breakdown_lines(snapshot)}},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": breakdown_lines(snapshot, style, cells)},
+        },
     ]
 
     fields = [

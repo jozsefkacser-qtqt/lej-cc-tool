@@ -48,11 +48,29 @@ class Settings(BaseSettings):
     post_unchanged_updates: bool = False
     #: Attach the workbook only when something changed (plus first + final).
     attach_file_on_change_only: bool = True
-    #: How the progress is drawn on the card. "grid" is ten rows of ten, one
-    #: cell per percent; "bar" is the older single row of ten. Ten cells
-    #: cannot draw 1.1% as less than a tenth of the bar, which is why the
-    #: grid is the default -- it is more accurate, not only larger.
-    progress_style: str = "grid"
+    #: How the progress is drawn on the card.
+    #:   slim  two rows of fifty monospace blocks -- one cell per percent,
+    #:         a fifth of the height, no colour (Slack cannot colour text)
+    #:   grid  ten rows of ten coloured emoji, one cell per percent
+    #:   bar   a single row of ten emoji; 1.1% has to take a whole cell
+    progress_style: str = "slim"
+    #: Cell characters for cleared / under inspection / still open, if you
+    #: would rather use your own. The point of this is narrow *custom* Slack
+    #: emoji: a workspace that uploads them gets a bar that is both slim and
+    #: coloured, which no standard emoji can be -- Slack gives them all the
+    #: same square box. Leave empty for the built-in cells.
+    progress_cell_cleared: str = ""
+    progress_cell_inspection: str = ""
+    progress_cell_open: str = ""
+
+    @property
+    def progress_cells(self) -> tuple[str, str, str] | None:
+        cells = (
+            self.progress_cell_cleared.strip(),
+            self.progress_cell_inspection.strip(),
+            self.progress_cell_open.strip(),
+        )
+        return cells if any(cells) else None
     #: List open HAWBs in the message only while there are at most this many.
     #: Beyond it the numbers are a wall of text nobody reads, and the chase
     #: sheet is the better answer.
