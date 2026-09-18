@@ -82,7 +82,7 @@ def test_a_finished_awb_says_so_in_the_header():
 
 def test_a_stopped_awb_is_not_called_finished():
     blocks = build_status_blocks(snap(3, 10), is_final=True)
-    assert blocks[0]["text"]["text"].startswith("⚠️ CC Stopped")
+    assert blocks[0]["text"]["text"].startswith("🛑 CC Stopped")
 
 
 def test_completed_card_drops_the_buttons_and_the_open_list():

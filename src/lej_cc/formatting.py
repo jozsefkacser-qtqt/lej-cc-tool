@@ -172,6 +172,30 @@ def progress_visual(
     return progress_slim(percent, inspection, override=override)
 
 
+def pct(value: float) -> str:
+    """A percentage with a decimal only when there is one.
+
+    100.0% reads as false precision on a number that cannot go higher, and
+    75.0% is just 75%. 98.6% keeps its decimal because it has one.
+    """
+    return f"{value:.0f}%" if float(value).is_integer() else f"{value:.1f}%"
+
+
+def readiness(snapshot: Snapshot) -> tuple[str, str]:
+    """The one icon that says whether this AWB needs anything, and why.
+
+      ✅  everything released by customs -- nothing to do
+      🟠  finished, but customs is holding some: nobody here can move them,
+          and somebody may still have to tell a customer
+      ❌  not finished; there is open work
+    """
+    if snapshot.all_cleared:
+        return "✅", "completed"
+    if snapshot.is_complete:
+        return "🟠", "completed"
+    return "❌", "completed"
+
+
 def breakdown_lines(
     snapshot: Snapshot,
     style: str = "grid",
@@ -191,12 +215,13 @@ def breakdown_lines(
         done, held = glyphs[0], glyphs[1]
 
     if not snapshot.inspection:
-        return f"{done}  *{snapshot.percent:.1f}%* cleared"
+        # The big line above already says it. Repeating the same number with
+        # a different word beneath it is not a breakdown, it is noise.
+        return ""
     return "\n".join(
         [
-            f"{done}  *{snapshot.percent:.1f}%* cleared",
-            f"{held}  *{snapshot.percent_inspection:.1f}%* inspection",
-            f"　  *= {snapshot.percent_settled:.1f}% completed*",
+            f"{done}  *{pct(snapshot.percent)}* cleared",
+            f"{held}  *{pct(snapshot.percent_inspection)}* inspection",
         ]
     )
 
@@ -326,10 +351,13 @@ def build_status_blocks(
 
     # The state of the clearance leads, because that is what someone
     # scanning the channel is looking for; the number identifies which one.
+    # The icon here is the same one the big line carries, so the two can
+    # never contradict each other at a glance.
+    mark, _ = readiness(snapshot)
     if done:
-        headline = f"✅ CC Finished — {mawb}"
+        headline = f"{mark} CC Finished — {mawb}"
     elif is_final:
-        headline = f"⚠️ CC Stopped — {mawb}, still open"
+        headline = f"🛑 CC Stopped — {mawb}, still open"
     else:
         headline = f"📦 CC In progress — {mawb}"
 
@@ -344,11 +372,20 @@ def build_status_blocks(
                 ),
             },
         },
+        # A header block, because this is the number people look for and a
+        # section renders it at the same size as everything else.
         {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": breakdown_lines(snapshot, style, cells)},
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"{mark}  {pct(snapshot.percent_settled)} completed",
+                "emoji": True,
+            },
         },
     ]
+    breakdown = breakdown_lines(snapshot, style, cells)
+    if breakdown:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": breakdown}})
 
     fields = [
         {

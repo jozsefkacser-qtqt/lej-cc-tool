@@ -404,15 +404,31 @@ that were never going to change without a customs decision.
 So it gets its own bucket, and the numbers add up:
 
 ```
-✅ CC Finished — 936-02928693       📦 CC In progress — 936-02928693
+🟠 CC Finished — 936-02928693       📦 CC In progress — 936-02928693
 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥               🟩🟩🟩🟩🟩🟥🟥⬜⬜⬜
-🟩  98.9%  cleared                  🟩  54.0%  cleared
-🟥   1.1%  inspection               🟥  21.0%  inspection
-    = 100.0% completed                  = 75.0% completed
+
+🟠  100% completed                  ❌  75% completed
+
+🟩  98.9% cleared                   🟩  54% cleared
+🟥   1.1% inspection                🟥  21% inspection
 
 ✅ Cleared            ⏳ Open       ❌ Under inspection
 1,067 of 1,079        0            12  (1.1%)
 ```
+
+One icon says whether the AWB needs anything, and the header carries the
+same one so they cannot contradict each other:
+
+| | |
+|---|---|
+| ✅ | Everything released by customs — nothing to do |
+| 🟠 | Finished, but customs is holding some. Nobody here can move them, though somebody may have to tell a customer |
+| ❌ | Not finished — there is open work |
+
+A percentage keeps its decimal only when it has one: `98.6%`, but `100%`
+and `75%`. And the breakdown appears only when something is held — with
+nothing under inspection it would repeat the headline number with a
+different word beside it.
 
 There is no gradient by completeness. Shading the cleared block amber as an
 AWB progressed said what the length of the block already said, and it

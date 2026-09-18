@@ -217,7 +217,42 @@ def test_the_card_shows_both_percentages_and_their_sum():
     body = _text(build_status_blocks(snap(cleared=1067, inspection=12)))
     assert "98.9%" in body
     assert "1.1%" in body
-    assert "100.0%" in body
+    assert "100% completed" in body
+
+
+def test_a_whole_percentage_drops_its_decimal():
+    """100.0% is false precision on a number that cannot go higher."""
+    from lej_cc.formatting import pct
+
+    assert pct(100.0) == "100%"
+    assert pct(75.0) == "75%"
+    assert pct(98.6) == "98.6%"
+    assert pct(0.0) == "0%"
+
+
+def test_the_headline_number_is_its_own_header_block():
+    """A section renders it at the size of everything else; this is the
+    number people are looking for."""
+    blocks = build_status_blocks(snap(cleared=54, inspection=21, open_=25))
+    assert blocks[2]["type"] == "header"
+    assert blocks[2]["text"]["text"] == "❌  75% completed"
+
+
+def test_one_icon_says_whether_anything_needs_doing():
+    from lej_cc.formatting import readiness
+
+    assert readiness(snap(cleared=10))[0] == "✅"                       # nothing to do
+    assert readiness(snap(cleared=9, inspection=1))[0] == "🟠"          # customs has it
+    assert readiness(snap(cleared=9, open_=1))[0] == "❌"               # open work
+
+
+def test_the_header_and_the_headline_never_contradict():
+    for s in (snap(cleared=10), snap(cleared=9, inspection=1), snap(cleared=5, open_=5)):
+        blocks = build_status_blocks(s)
+        mark = blocks[2]["text"]["text"].split()[0]
+        if not s.is_complete:
+            continue  # in progress keeps its own 📦
+        assert blocks[0]["text"]["text"].startswith(mark)
 
 
 def test_the_card_names_the_held_shipments():
@@ -232,23 +267,25 @@ def test_a_clean_awb_says_nothing_about_inspections():
 
 
 def test_finished_never_reads_as_fully_cleared():
-    """The header says CC Finished, which is true -- nothing here can move
-    it. The breakdown directly under it has to stop that being read as
-    "everything was released"."""
+    """CC Finished is true -- nothing here can move it -- but the icon and
+    the breakdown have to stop it reading as "everything was released"."""
     blocks = build_status_blocks(snap(cleared=1067, inspection=12))
-    breakdown = blocks[2]["text"]["text"]
 
-    assert blocks[0]["text"]["text"].startswith("✅ CC Finished")
+    assert blocks[0]["text"]["text"].startswith("🟠 CC Finished")
+    assert blocks[2]["text"]["text"] == "🟠  100% completed"
+    breakdown = blocks[3]["text"]["text"]
     assert "98.9%* cleared" in breakdown
     assert "1.1%* inspection" in breakdown
-    assert "100.0% completed" in breakdown
 
 
-def test_the_breakdown_is_one_line_when_nothing_is_held():
-    """Three lines summing to the first number would just be noise."""
-    breakdown = build_status_blocks(snap(cleared=5, open_=5))[2]["text"]["text"]
-    assert breakdown.count("\n") == 0
-    assert "50.0%* cleared" in breakdown
+def test_there_is_no_breakdown_when_nothing_is_held():
+    """It would repeat the headline number with a different word beside it."""
+    from lej_cc.formatting import breakdown_lines
+
+    assert breakdown_lines(snap(cleared=5, open_=5)) == ""
+    texts = [b["text"]["text"] for b in build_status_blocks(snap(cleared=5, open_=5))
+             if b["type"] in ("header", "section") and "text" in b]
+    assert not any("cleared" in t and "%" in t and "completed" not in t for t in texts)
 
 
 def test_a_new_inspection_is_reported_as_a_change():
