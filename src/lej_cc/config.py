@@ -49,11 +49,17 @@ class Settings(BaseSettings):
     #: Attach the workbook only when something changed (plus first + final).
     attach_file_on_change_only: bool = True
     #: How the progress is drawn on the card.
-    #:   slim  two rows of fifty monospace blocks -- one cell per percent,
-    #:         a fifth of the height, no colour (Slack cannot colour text)
-    #:   grid  ten rows of ten coloured emoji, one cell per percent
+    #:   grid  coloured emoji, PROGRESS_ROWS x PROGRESS_COLS of them
+    #:   slim  two rows of fifty monospace blocks -- exact to the percent and
+    #:         half the width, but no colour: Slack cannot colour text
     #:   bar   a single row of ten emoji; 1.1% has to take a whole cell
-    progress_style: str = "slim"
+    progress_style: str = "grid"
+    #: Shape of the grid. 2 x 25 is two lines at 2% a cell; 5 x 20 or 4 x 25
+    #: give an exact 1% for five or four lines; 1 x 20 is a single line but
+    #: has to draw a 1.1% inspection as 5%. Above about 25 a row wraps on a
+    #: phone, which looks broken.
+    progress_rows: int = 2
+    progress_cols: int = 25
     #: Cell characters for cleared / under inspection / still open, if you
     #: would rather use your own. The point of this is narrow *custom* Slack
     #: emoji: a workspace that uploads them gets a bar that is both slim and

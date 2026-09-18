@@ -230,6 +230,8 @@ class Tracker:
             tracking_since=job.created_at,
             style=settings.progress_style,
             cells=settings.progress_cells,
+            rows=settings.progress_rows,
+            cols=settings.progress_cols,
         )
         text = formatting.summary_line(snapshot)
 

@@ -262,12 +262,24 @@ def test_a_new_inspection_is_reported_as_a_change():
 # --- the grid ------------------------------------------------------------
 
 
-def test_the_grid_is_ten_rows_of_ten():
+def test_the_default_shape_is_two_rows_of_twenty_five():
+    """Coloured and only two lines: the shape that survived being looked at
+    in a real channel. Ten rows of ten was too tall, monospace too drab."""
+    from lej_cc.formatting import GRID_COLS, GRID_ROWS, progress_grid
+
+    assert (GRID_ROWS, GRID_COLS) == (2, 25)
+    rows = progress_grid(50.0).split("\n")
+    assert len(rows) == 2
+    assert all(len(r) == 25 for r in rows)
+
+
+def test_the_shape_is_tunable_without_touching_the_code():
     from lej_cc.formatting import progress_grid
 
-    rows = progress_grid(50.0).split("\n")
-    assert len(rows) == 10
-    assert all(len(r) == 10 for r in rows)
+    for rows, cols in ((5, 20), (4, 25), (1, 20), (10, 10)):
+        drawn = progress_grid(50.0, 10.0, rows=rows, cols=cols)
+        assert len(drawn.split("\n")) == rows
+        assert all(len(r) == cols for r in drawn.split("\n"))
 
 
 def test_a_hundred_cells_tell_the_truth_a_tenth_could_not():
@@ -276,7 +288,7 @@ def test_a_hundred_cells_tell_the_truth_a_tenth_could_not():
     from lej_cc.formatting import progress_bar, progress_grid
 
     assert progress_bar(98.9, inspection=1.1).count(BAR_INSPECTION) == 1  # 10%
-    assert progress_grid(98.9, 1.1).count(BAR_INSPECTION) == 2  # 2%
+    assert progress_grid(98.9, 1.1, rows=10, cols=10).count(BAR_INSPECTION) == 2  # 2%
 
 
 def test_the_grid_fills_completely_only_when_everything_is_settled():
@@ -284,6 +296,8 @@ def test_the_grid_fills_completely_only_when_everything_is_settled():
 
     assert "⬜" not in progress_grid(98.9, 1.1)
     assert "⬜" in progress_grid(99.9)  # 0.1% short is not finished
+    assert "⬜" not in progress_grid(98.9, 1.1, rows=10, cols=10)
+    assert "⬜" in progress_grid(99.9, rows=10, cols=10)
 
 
 def test_a_single_held_shipment_still_shows_in_the_grid():
@@ -296,14 +310,17 @@ def test_the_grid_always_has_exactly_a_hundred_cells():
     from lej_cc.formatting import progress_grid
 
     for cleared, held in ((0, 0), (100, 0), (0, 100), (33.3, 33.3), (98.9, 1.1), (0.4, 0.3)):
-        assert len(progress_grid(cleared, held).replace("\n", "")) == 100
+        assert len(progress_grid(cleared, held, rows=10, cols=10).replace("\n", "")) == 100
+        assert len(progress_grid(cleared, held).replace("\n", "")) == 50
 
 
-def test_the_operator_can_go_back_to_the_ten_cell_bar():
+def test_every_style_is_reachable_from_the_config():
     from lej_cc.formatting import progress_visual
 
     assert "\n" not in progress_visual(50.0, 10.0, style="bar")
-    assert progress_visual(50.0, 10.0, style="grid").count("\n") == 9
+    assert progress_visual(50.0, 10.0, style="grid").count("\n") == 1  # 2 x 25
+    assert progress_visual(50.0, 10.0, style="grid", rows=10, cols=10).count("\n") == 9
+    assert progress_visual(50.0, 10.0, style="slim").startswith("```")
 
 
 # --- the slim rendering --------------------------------------------------
@@ -322,7 +339,7 @@ def test_slim_keeps_the_same_one_percent_resolution_as_the_grid():
     from lej_cc.formatting import SLIM_INSPECTION, progress_grid, progress_slim
 
     assert progress_slim(98.9, 1.1).count(SLIM_INSPECTION) == 2
-    assert progress_grid(98.9, 1.1).count(BAR_INSPECTION) == 2
+    assert progress_grid(98.9, 1.1, rows=10, cols=10).count(BAR_INSPECTION) == 2
 
 
 def test_slim_is_monospace_so_slack_does_not_reflow_it():
@@ -347,7 +364,7 @@ def test_every_style_agrees_about_what_a_percentage_looks_like():
     from lej_cc.formatting import progress_bar, progress_grid, progress_slim
 
     for cleared, held in ((98.9, 1.1), (54.0, 21.0), (0.0, 0.0), (100.0, 0.0)):
-        settled_grid = 100 - progress_grid(cleared, held).count("⬜")
+        settled_grid = 100 - progress_grid(cleared, held, rows=10, cols=10).count("⬜")
         settled_slim = 100 - progress_slim(cleared, held).count("░")
         assert settled_grid == settled_slim
         assert len(progress_bar(cleared, inspection=held)) == 10
@@ -360,7 +377,7 @@ def test_custom_cells_replace_the_built_in_ones():
     """A workspace with narrow custom emoji gets slim *and* coloured."""
     from lej_cc.formatting import progress_grid
 
-    drawn = progress_grid(50.0, 10.0, override=(":g:", ":r:", ":o:"))
+    drawn = progress_grid(50.0, 10.0, rows=10, cols=10, override=(":g:", ":r:", ":o:"))
     assert drawn.count(":g:") == 50
     assert drawn.count(":r:") == 10
     assert "🟩" not in drawn
@@ -388,7 +405,9 @@ def test_custom_cells_never_land_inside_a_code_fence():
     the style has to give way to the emoji somebody uploaded."""
     from lej_cc.formatting import progress_visual
 
-    drawn = progress_visual(50.0, 10.0, style="slim", override=(":g:", ":r:", ":o:"))
+    drawn = progress_visual(
+        50.0, 10.0, style="slim", override=(":g:", ":r:", ":o:"), rows=10, cols=10
+    )
     assert "```" not in drawn
     assert drawn.count(":g:") == 50
 
@@ -396,5 +415,6 @@ def test_custom_cells_never_land_inside_a_code_fence():
 def test_a_multi_character_cell_is_never_cut_at_a_row_break():
     from lej_cc.formatting import progress_grid
 
-    for row in progress_grid(50.0, 10.0, override=(":g:", ":r:", ":o:")).split("\n"):
+    grid = progress_grid(50.0, 10.0, rows=10, cols=10, override=(":g:", ":r:", ":o:"))
+    for row in grid.split("\n"):
         assert row.count(":") == 20  # ten cells, two colons each

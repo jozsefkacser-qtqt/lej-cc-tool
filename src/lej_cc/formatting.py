@@ -102,8 +102,11 @@ def progress_bar(
 #: as anything smaller than a tenth of the bar, which drew twelve held
 #: shipments out of 1,079 as if they were a tenth of the AWB. A hundred
 #: cells cost nothing to render and tell the truth to the nearest percent.
-GRID_ROWS = 10
-GRID_COLS = 10
+#: Two rows of twenty-five by default: coloured, only two lines tall, and
+#: 2% per cell. A hundred cells is exact but five to ten lines deep, and a
+#: single row has to draw a 1.1% inspection as 4% or 5%.
+GRID_ROWS = 2
+GRID_COLS = 25
 
 
 def progress_grid(
@@ -158,8 +161,10 @@ def progress_slim(
 def progress_visual(
     percent: float,
     inspection: float = 0.0,
-    style: str = "slim",
+    style: str = "grid",
     override: tuple[str, str, str] | None = None,
+    rows: int = GRID_ROWS,
+    cols: int = GRID_COLS,
 ) -> str:
     if style == "bar":
         return progress_bar(percent, inspection=inspection, override=override)
@@ -167,13 +172,13 @@ def progress_visual(
     # text rather than rendering it. Someone who has gone to the trouble of
     # uploading narrow emoji wants to see them, so the grid carries them.
     if style == "grid" or override:
-        return progress_grid(percent, inspection, override=override)
+        return progress_grid(percent, inspection, rows, cols, override=override)
     return progress_slim(percent, inspection, override=override)
 
 
 def breakdown_lines(
     snapshot: Snapshot,
-    style: str = "slim",
+    style: str = "grid",
     override: tuple[str, str, str] | None = None,
 ) -> str:
     """Cleared, held, and the sum of the two, one per line.
@@ -297,8 +302,10 @@ def build_status_blocks(
     poll_count: int = 0,
     tracking_since: datetime | None = None,
     forecast=None,  # noqa: ANN001 - a forecast.Forecast
-    style: str = "slim",
+    style: str = "grid",
     cells: tuple[str, str, str] | None = None,
+    rows: int = GRID_ROWS,
+    cols: int = GRID_COLS,
 ) -> list[dict]:
     """The status card. `is_final` switches the wording to a closing note."""
     mawb = format_display(snapshot.mawb)
@@ -321,7 +328,7 @@ def build_status_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": progress_visual(
-                    snapshot.percent, snapshot.percent_inspection, style, cells
+                    snapshot.percent, snapshot.percent_inspection, style, cells, rows, cols
                 ),
             },
         },

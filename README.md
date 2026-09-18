@@ -424,11 +424,11 @@ cells, 1.1% has to occupy a whole one — drawing twelve held shipments out of
 `PROGRESS_STYLE` picks how that is drawn. All three use the same arithmetic,
 so they cannot disagree about what a percentage looks like.
 
-| | Looks like | |
+| | | |
 |---|---|---|
-| **`slim`** *(default)* | `██████████████████████▓▓░░░░░░` | Two rows of fifty monospace blocks. A fifth of the height, one cell per percent, **no colour** — Slack cannot colour text, only emoji. Solid is cleared, dark is held, light is open. |
-| `grid` | 🟩🟩🟩🟥⬜⬜ ×10 rows | Ten rows of ten coloured emoji. Same resolution, five times taller. |
-| `bar` | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 | One row of ten. Compact, but 1.1% has to take a whole cell. |
+| **`grid`** *(default)* | Coloured emoji, `PROGRESS_ROWS` × `PROGRESS_COLS` | **2 × 25** out of the box: two lines, 2% a cell. `5 × 20` or `4 × 25` are exact to 1% for a line or three more; `1 × 20` fits on one line but has to draw a 1.1% inspection as 5%. Past ~25 columns a row wraps on a phone. |
+| `slim` | `██████████████▓▓░░░░` | Two rows of fifty monospace blocks: exact to the percent and half the width, but **no colour** — Slack cannot colour text, only emoji. |
+| `bar` | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 | One row of ten. 1.1% has to take a whole cell — nine times too much. |
 
 ### Slim *and* coloured
 
