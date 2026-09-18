@@ -23,7 +23,7 @@ class FakeNotifier:
     uploads: list[dict] = field(default_factory=list)
     _ts: int = 1000
 
-    def post(self, channel, *, text, blocks=None, thread_ts=None, broadcast=False):
+    def post(self, channel, *, text, blocks=None, thread_ts=None, broadcast=False, colour=None):
         self._ts += 1
         self.posts.append(
             {
@@ -32,6 +32,7 @@ class FakeNotifier:
                 "blocks": blocks,
                 "thread_ts": thread_ts,
                 "broadcast": broadcast,
+                "colour": colour,
             }
         )
         return f"{self._ts}.0001"

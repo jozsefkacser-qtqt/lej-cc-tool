@@ -26,6 +26,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--file", type=Path, help="parse a local workbook instead of downloading")
     parser.add_argument("--list-open", action="store_true", help="print every open HAWB")
     parser.add_argument(
+        "--inspection-list",
+        nargs="?",
+        const="-",
+        metavar="LOOKUP",
+        help="write the printable pick list of parcels customs is holding, "
+             "optionally joined to a CSV/XLSX of box ids keyed by tracking number",
+    )
+    parser.add_argument(
         "--statuses",
         action="store_true",
         help="list the raw Final Status values in this export and what they map to",
@@ -78,6 +86,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  covers       {len(snapshot.resolved_mawbs)} MAWB(s): {shown}{extra}")
     if snapshot.generated_at:
         print(f"  data as of   {snapshot.generated_at:%Y-%m-%d %H:%M:%S %Z}")
+
+    if args.inspection_list:
+        from .picklist import build_inspection_list, load_lookup
+
+        lookup = load_lookup(None if args.inspection_list == "-" else args.inspection_list)
+        written = build_inspection_list(snapshot, Path.cwd(), lookup)
+        if written is None:
+            print("  no parcels are under inspection — nothing to pick")
+        else:
+            print(f"  pick list   {written}")
 
     if args.statuses:
         # What Final Status values this export actually contains. The one

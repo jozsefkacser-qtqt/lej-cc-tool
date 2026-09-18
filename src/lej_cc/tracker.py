@@ -21,6 +21,7 @@ from .forecast import DEFAULT_WINDOW, estimate
 from .health import HEALTH
 from .model import Snapshot, diff_snapshots
 from .parser import StatusMapper, parse_workbook
+from .picklist import build_inspection_list, load_lookup
 from .portground import PortGroundClient
 from .report import (
     build_open_shipments_workbook,
@@ -43,6 +44,7 @@ class Notifier(Protocol):
         blocks: list[dict] | None = None,
         thread_ts: str | None = None,
         broadcast: bool = False,
+        colour: str | None = None,
     ) -> str | None: ...
 
     def upload(
@@ -181,6 +183,7 @@ class Tracker:
                 f"{formatting._duration(stalled_for)} — {len(snapshot.open_rows):,} open"
             ),
             blocks=blocks,
+            colour=formatting.STRIPE["❌"],
             thread_ts=job.thread_ts,
             broadcast=bool(job.thread_ts),
         )
@@ -235,10 +238,11 @@ class Tracker:
             cols=settings.progress_cols,
         )
         text = formatting.summary_line(snapshot)
+        colour = formatting.stripe_colour(snapshot)
 
         if job.is_first_poll and not job.thread_ts:
             # First message goes to the channel and becomes the thread root.
-            ts = self.notifier.post(job.channel_id, text=text, blocks=blocks)
+            ts = self.notifier.post(job.channel_id, text=text, blocks=blocks, colour=colour)
             if ts:
                 self.store.set_thread(job.id, ts)
                 job.thread_ts = ts
@@ -250,6 +254,7 @@ class Tracker:
                 text=text,
                 blocks=blocks,
                 thread_ts=job.thread_ts,
+                colour=colour,
             )
         elif not changed:
             self.notifier.post(
@@ -267,6 +272,7 @@ class Tracker:
                 blocks=blocks,
                 thread_ts=job.thread_ts,
                 broadcast=is_final,
+                colour=colour,
             )
 
         if not self._should_attach(job, changed=changed, is_final=is_final):
@@ -275,6 +281,7 @@ class Tracker:
 
         # Built once and shared: Slack uploads it, email attaches the same file.
         sheet = self._build_chase_sheet(job, snapshot) if settings.attach_open_summary else None
+        picks = self._build_pick_list(job, snapshot)
 
         # While tracking continues, files belong in the thread so the channel
         # stays readable. On the last update there is no thread worth opening
@@ -292,6 +299,19 @@ class Tracker:
                 thread_ts=destination,
             )
 
+        # The pick list is a job for the floor, so it says so in its title.
+        if picks is not None:
+            self.notifier.upload(
+                job.channel_id,
+                picks,
+                filename=picks.name,
+                title=(
+                    f"{format_display(job.mawb)} — {snapshot.inspection:,} parcel(s) to "
+                    "pull for inspection (printable)"
+                ),
+                thread_ts=destination,
+            )
+
         if settings.attach_full_workbook:
             self.notifier.upload(
                 job.channel_id,
@@ -301,7 +321,9 @@ class Tracker:
                 thread_ts=destination,
             )
 
-        attachments = [p for p in (sheet, path if settings.attach_full_workbook else None) if p]
+        attachments = [
+            p for p in (sheet, picks, path if settings.attach_full_workbook else None) if p
+        ]
         self._email_update(
             job, snapshot, diff, next_run_at, is_final=is_final, attachments=attachments
         )
@@ -340,6 +362,20 @@ class Tracker:
             return build_open_shipments_workbook(snapshot, self.settings.download_dir)
         except Exception:  # noqa: BLE001 - a report bug must not lose the update
             log.exception("could not build the chase sheet for %s", job.mawb)
+            return None
+
+    def _build_pick_list(self, job: Job, snapshot: Snapshot) -> Path | None:
+        """The parcels to pull off the shelf, when customs is holding any."""
+        if not self.settings.attach_inspection_list or not snapshot.inspection:
+            return None
+        try:
+            return build_inspection_list(
+                snapshot,
+                self.settings.download_dir,
+                load_lookup(self.settings.inspection_lookup_file),
+            )
+        except Exception:  # noqa: BLE001 - a report bug must not lose the update
+            log.exception("could not build the inspection pick list for %s", job.mawb)
             return None
 
     def _email_update(

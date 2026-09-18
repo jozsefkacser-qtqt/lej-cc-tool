@@ -23,15 +23,26 @@ class SlackNotifier:
         blocks: list[dict] | None = None,
         thread_ts: str | None = None,
         broadcast: bool = False,
+        colour: str | None = None,
     ) -> str | None:
+        """Post a card. `colour` draws a stripe down its left edge.
+
+        The stripe is the one piece of real colour Slack allows on a
+        message, and it is what makes a channel of cards scannable from
+        across the room -- it needs the older attachment wrapper, which is
+        the only place Block Kit accepts a colour at all.
+        """
+        payload: dict = {"blocks": blocks} if blocks else {}
+        if colour and blocks:
+            payload = {"attachments": [{"color": colour, "blocks": blocks}]}
         try:
             response = self.client.chat_postMessage(
                 channel=channel,
                 text=text,  # fallback for notifications and screen readers
-                blocks=blocks,
                 thread_ts=thread_ts,
                 reply_broadcast=broadcast if thread_ts else None,
                 unfurl_links=False,
+                **payload,
             )
             return response.get("ts")
         except SlackApiError as exc:

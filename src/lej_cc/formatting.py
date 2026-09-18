@@ -181,6 +181,15 @@ def pct(value: float) -> str:
     return f"{value:.0f}%" if float(value).is_integer() else f"{value:.1f}%"
 
 
+#: The stripe down the left edge of the card, matching the readiness icon.
+#: Same three hex values the email uses, so the two channels are one system.
+STRIPE = {"✅": "#2e7d32", "🟠": "#ed6c02", "❌": "#c62828"}
+
+
+def stripe_colour(snapshot: Snapshot) -> str:
+    return STRIPE[readiness(snapshot)[0]]
+
+
 def readiness(snapshot: Snapshot) -> tuple[str, str]:
     """The one icon that says whether this AWB needs anything, and why.
 

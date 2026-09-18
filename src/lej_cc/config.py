@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     attach_open_summary: bool = True
     #: Also attach PortGround's original 17-column export as the audit trail.
     attach_full_workbook: bool = True
+    #: Attach the printable pick list when customs is holding parcels: which
+    #: ones to pull, sorted by box, with a column to tick them off.
+    attach_inspection_list: bool = True
+    #: PortGround's export has no box id and no customer name. Point this at
+    #: a CSV or XLSX keyed by tracking number and the pick list fills both
+    #: columns; without it they print blank rather than guessed.
+    inspection_lookup_file: Path | None = None
 
     # --- email notifications (optional) ---
     #: Leave smtp_host empty to disable email entirely.

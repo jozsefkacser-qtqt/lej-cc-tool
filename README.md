@@ -520,14 +520,59 @@ python -m lej_cc.cli 936-02928693 --statuses
 If the wording lives in a different column than `Final Status`, that output
 will show it — send it over and the mapping moves in one line.
 
+## The card's colour
+
+Each card carries a stripe down its left edge in the colour of its readiness
+icon — green released, orange held by customs, red open work. It needs the
+older attachment wrapper, which is the only place Slack accepts a colour on
+a message at all, and it is what makes a channel of cards scannable from
+across the room.
+
 ## Attachments
 
-Each update carries two files:
+Each update carries two files, and a third when customs is holding parcels:
 
 | File | What it is |
 |---|---|
 | `OPEN_488-20744846_34_shipments.xlsx` | **The chase sheet.** Only shipments still open, only the columns needed to chase them, oldest first, with a filter row and frozen header. |
+| `INSPECTION_936-02928693_12_parcels.xlsx` | **The pick list** — see below. Only when something is under inspection. |
 | `shipment_status_….xlsx` | PortGround's original 17-column export, unmodified, as the audit trail. |
+
+### The inspection pick list
+
+A warehouse document, not a report: somebody prints it, walks the racking
+and ticks parcels off. So it is landscape, fitted to one page wide, repeats
+its header on every sheet, bands alternate boxes so a row cannot be read off
+the wrong line, and it ends in a **Pulled ✓** column wide enough to write in.
+
+| Box | Tracking number | Customer | Invoice | Shipment ref | Checked in | Items | Hold | Pulled ✓ |
+|---|---|---|---|---|---|---|---|---|
+| A-03 | 00340434762604… | Temu DE | BG-2608249… | ATX0343537… | 17 Sep 11:13 | 1 | inspection | |
+
+Sorted by box, so the walk is one pass of the racking; parcels with no box
+listed last, because they still have to be pulled.
+
+**PortGround's export has no box id and no customer name** — its seventeen
+columns are shipment references and timestamps. Those two come from a lookup
+file you supply:
+
+```ini
+INSPECTION_LOOKUP_FILE=config/boxes.csv
+```
+
+CSV or XLSX, keyed by tracking number. Column names are matched loosely
+(`Box` / `Box ID` / `location` / `shelf`, `Customer` / `Consignee` /
+`receiver`), because that file comes from whatever system holds the box
+numbers and nobody should have to rename headers to use it. Without it the
+two columns print **blank, with a note on the sheet saying why** — a box
+number invented by sorting on something that is not a box number sends
+somebody to the wrong shelf.
+
+To print one without Slack:
+
+```bash
+lej-cc-check 936-02928693 --inspection-list config/boxes.csv
+```
 
 On a real master AWB that is 34 rows x 10 columns instead of 1578 x 17.
 Set `ATTACH_FULL_WORKBOOK=false` to keep only the short one.

@@ -306,6 +306,7 @@ def parse_workbook(
                         cell(row, "Notification Customs Office")
                     ),
                     invoice_number=_clean(cell(row, "Invoice Number")),
+                    atx=_clean(cell(row, "ATX")),
                     mrn_id=_clean(cell(row, "MRN-ID")),
                     items=_parse_int(cell(row, "Number of items")),
                 )

@@ -43,6 +43,9 @@ class ShipmentRow:
     notification_customs_office: datetime | None = None
     invoice_number: str | None = None
     mrn_id: str | None = None
+    #: PortGround's own per-shipment reference, unique on every row of the
+    #: export. The handle to quote back at them about one parcel.
+    atx: str | None = None
     #: PortGround's "Number of items" column. Despite the name this counts
     #: declaration line items, not parcels: in the reference export it equals
     #: "Number of hs codes" on every one of the 1605 rows. Displayed as
