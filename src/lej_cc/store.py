@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     last_status_map       TEXT,
     last_percent          REAL,
     last_cleared          INTEGER,
+    last_inspection       INTEGER,
     last_total            INTEGER,
     last_polled_at        TEXT,
     finished_at           TEXT,
@@ -110,6 +111,9 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # nothing has changed -- silence in answer to a button press reads as a
     # broken button, which is exactly how it was reported.
     ("jobs", "force_post", "INTEGER NOT NULL DEFAULT 0"),
+    # How many are held by customs, so a listing can say 54% + 21% rather
+    # than 54% and leave somebody to wonder where the rest went.
+    ("jobs", "last_inspection", "INTEGER"),
 )
 
 
@@ -141,6 +145,7 @@ class Job:
     last_status_map: dict[str, str] | None = None
     last_percent: float | None = None
     last_cleared: int | None = None
+    last_inspection: int | None = None
     last_total: int | None = None
     last_polled_at: datetime | None = None
     finish_reason: str | None = None
@@ -184,6 +189,9 @@ class Job:
             last_status_map=json.loads(row["last_status_map"]) if row["last_status_map"] else None,
             last_percent=row["last_percent"],
             last_cleared=row["last_cleared"],
+            last_inspection=(
+                row["last_inspection"] if "last_inspection" in row.keys() else None
+            ),
             last_total=row["last_total"],
             last_polled_at=_dt(row["last_polled_at"]),
             finish_reason=row["finish_reason"],
@@ -352,6 +360,7 @@ class JobStore:
         status_map: dict[str, str] | None = None,
         percent: float | None = None,
         cleared: int | None = None,
+        inspection: int | None = None,
         total: int | None = None,
         reset_failures: bool = False,
         made_progress: bool = False,
@@ -390,6 +399,7 @@ class JobStore:
             params.append(json.dumps(status_map))
         for column, value in (
             ("last_percent", percent),
+            ("last_inspection", inspection),
             ("last_cleared", cleared),
             ("last_total", total),
         ):

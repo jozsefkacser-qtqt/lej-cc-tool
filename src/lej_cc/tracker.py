@@ -146,6 +146,7 @@ class Tracker:
                 status_map=snapshot.status_by_hawb(),
                 percent=snapshot.percent,
                 cleared=snapshot.cleared,
+                inspection=snapshot.inspection,
                 total=snapshot.total,
                 reset_failures=True,
                 made_progress=bool(diff.newly_cleared),

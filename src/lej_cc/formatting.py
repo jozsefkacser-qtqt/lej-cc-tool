@@ -279,6 +279,22 @@ def _open_section(hawbs: list[str], threshold: int) -> str:
     )
 
 
+def job_percent(job) -> str:  # noqa: ANN001 - a store.Job
+    """How far along one tracked AWB is, in a single line of a listing.
+
+    Says both figures when customs is holding some: "54.0% + 21.0% = 75.0%"
+    rather than a bare 54.0%, which reads as an AWB twenty-one percent worse
+    off than it is. This is the same mistake the card itself used to make.
+    """
+    if job.last_percent is None:
+        return "first check pending"
+    if not job.last_inspection or not job.last_total:
+        return f"{job.last_percent:.1f}%"
+    held = 100.0 * job.last_inspection / job.last_total
+    settled = 100.0 * (job.last_cleared + job.last_inspection) / job.last_total
+    return f"{job.last_percent:.1f}% + {held:.1f}% inspection = {settled:.1f}%"
+
+
 def summary_line(snapshot: Snapshot) -> str:
     """One-line form, used for `/awb list` and the notification fallback."""
     return (
@@ -545,10 +561,10 @@ def build_status_report(
         f"*Tracking:* {len(active_jobs)} AWB(s)",
     ]
     for job in active_jobs[:10]:
-        percent = (
-            f"{job.last_percent:.1f}%" if job.last_percent is not None else "first check"
+        lines.append(
+            f"  • `{format_display(job.mawb)}` — {job_percent(job)}, "
+            f"next {_hhmm(job.next_run_at)}"
         )
-        lines.append(f"  • `{format_display(job.mawb)}` — {percent}, next {_hhmm(job.next_run_at)}")
     if len(active_jobs) > 10:
         lines.append(f"  _…and {len(active_jobs) - 10} more_")
 

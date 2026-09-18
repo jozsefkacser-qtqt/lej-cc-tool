@@ -464,3 +464,58 @@ def test_the_three_blocks_never_overlap_or_leave_a_gap():
             + BAR_INSPECTION * drawn.count(BAR_INSPECTION)
             + BAR_EMPTY * drawn.count(BAR_EMPTY)
         )
+
+
+# --- the listings ---------------------------------------------------------
+
+
+def _job(**kw):
+    from lej_cc.store import Job, utcnow
+
+    base = dict(
+        id=1, mawb="93602928693", channel_id="C1", thread_ts=None, requested_by="U1",
+        state="active", created_at=utcnow(), next_run_at=utcnow(),
+    )
+    return Job(**{**base, **kw})
+
+
+def test_a_listing_shows_both_figures_when_customs_holds_some():
+    """A bare 54.0% reads as an AWB twenty-one percent worse off than it is
+    -- the same mistake the card itself used to make."""
+    from lej_cc.formatting import job_percent
+
+    line = job_percent(_job(last_percent=54.0, last_cleared=54, last_inspection=21,
+                            last_total=100))
+    assert line == "54.0% + 21.0% inspection = 75.0%"
+
+
+def test_a_listing_stays_short_when_nothing_is_held():
+    from lej_cc.formatting import job_percent
+
+    assert job_percent(_job(last_percent=98.6, last_cleared=3590, last_inspection=0,
+                            last_total=3640)) == "98.6%"
+
+
+def test_a_job_polled_before_the_column_existed_still_renders():
+    """last_inspection is None on every row written before this landed."""
+    from lej_cc.formatting import job_percent
+
+    assert job_percent(_job(last_percent=93.5, last_cleared=935, last_total=1000)) == "93.5%"
+
+
+def test_a_job_with_no_poll_yet_says_so():
+    from lej_cc.formatting import job_percent
+
+    assert job_percent(_job()) == "first check pending"
+
+
+def test_the_status_card_lists_the_breakdown():
+    from lej_cc.config import Settings
+    from lej_cc.formatting import build_status_report
+    from lej_cc.health import Health
+
+    settings = Settings(slack_bot_token="x", slack_app_token="x", portground_api_key="k")
+    job = _job(last_percent=54.0, last_cleared=54, last_inspection=21, last_total=100)
+    body = build_status_report(Health(), [job], settings)[0]["text"]["text"]
+
+    assert "54.0% + 21.0% inspection = 75.0%" in body

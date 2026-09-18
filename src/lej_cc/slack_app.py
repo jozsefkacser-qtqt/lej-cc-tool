@@ -164,10 +164,9 @@ def build_app(
                 return
             lines = []
             for job in jobs:
-                percent = f"{job.last_percent:.0f}%" if job.last_percent is not None else "—"
                 lines.append(
-                    f"• `{format_display(job.mawb)}` — {percent} "
-                    f"({job.last_cleared or 0}/{job.last_total or 0}), check #{job.poll_count}"
+                    f"• `{format_display(job.mawb)}` — {formatting.job_percent(job)} "
+                    f"({job.last_cleared or 0}/{job.last_total or 0}), poll {job.poll_count}"
                 )
             respond("*Currently tracking:*\n" + "\n".join(lines))
             return
