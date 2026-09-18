@@ -262,15 +262,15 @@ def test_a_new_inspection_is_reported_as_a_change():
 # --- the grid ------------------------------------------------------------
 
 
-def test_the_default_shape_is_two_rows_of_twenty_five():
-    """Coloured and only two lines: the shape that survived being looked at
-    in a real channel. Ten rows of ten was too tall, monospace too drab."""
+def test_the_default_shape_is_one_row_of_ten():
+    """Settled after looking at the alternatives in a real channel: ten rows
+    of a hundred cells was too tall, monospace too drab."""
     from lej_cc.formatting import GRID_COLS, GRID_ROWS, progress_grid
 
-    assert (GRID_ROWS, GRID_COLS) == (2, 25)
+    assert (GRID_ROWS, GRID_COLS) == (1, 10)
     rows = progress_grid(50.0).split("\n")
-    assert len(rows) == 2
-    assert all(len(r) == 25 for r in rows)
+    assert len(rows) == 1
+    assert len(rows[0]) == 10
 
 
 def test_the_shape_is_tunable_without_touching_the_code():
@@ -311,14 +311,14 @@ def test_the_grid_always_has_exactly_a_hundred_cells():
 
     for cleared, held in ((0, 0), (100, 0), (0, 100), (33.3, 33.3), (98.9, 1.1), (0.4, 0.3)):
         assert len(progress_grid(cleared, held, rows=10, cols=10).replace("\n", "")) == 100
-        assert len(progress_grid(cleared, held).replace("\n", "")) == 50
+        assert len(progress_grid(cleared, held).replace("\n", "")) == 10
 
 
 def test_every_style_is_reachable_from_the_config():
     from lej_cc.formatting import progress_visual
 
     assert "\n" not in progress_visual(50.0, 10.0, style="bar")
-    assert progress_visual(50.0, 10.0, style="grid").count("\n") == 1  # 2 x 25
+    assert progress_visual(50.0, 10.0, style="grid").count("\n") == 0  # 1 x 10
     assert progress_visual(50.0, 10.0, style="grid", rows=10, cols=10).count("\n") == 9
     assert progress_visual(50.0, 10.0, style="slim").startswith("```")
 
@@ -389,15 +389,15 @@ def test_the_legend_uses_whatever_the_bar_is_drawn_with():
 
     s = snap(cleared=54, inspection=21, open_=25)
     assert SLIM_CLEARED in breakdown_lines(s, "slim")
-    assert "🟨" in breakdown_lines(s, "grid")
+    assert "🟩" in breakdown_lines(s, "grid")
     assert ":g:" in breakdown_lines(s, "grid", override=(":g:", ":r:", ":o:"))
 
 
 def test_partly_set_overrides_fall_back_per_cell():
     from lej_cc.formatting import cells_for
 
-    assert cells_for(50.0, (":g:", "", "")) == (":g:", BAR_INSPECTION, "⬜")
-    assert cells_for(50.0, None) == ("🟨", BAR_INSPECTION, "⬜")
+    assert cells_for((":g:", "", "")) == (":g:", BAR_INSPECTION, "⬜")
+    assert cells_for(None) == ("🟩", BAR_INSPECTION, "⬜")
 
 
 def test_custom_cells_never_land_inside_a_code_fence():
@@ -418,3 +418,49 @@ def test_a_multi_character_cell_is_never_cut_at_a_row_break():
     grid = progress_grid(50.0, 10.0, rows=10, cols=10, override=(":g:", ":r:", ":o:"))
     for row in grid.split("\n"):
         assert row.count(":") == 20  # ten cells, two colons each
+
+
+# --- one row of ten, three colours --------------------------------------
+
+
+def test_the_default_is_one_row_of_ten():
+    from lej_cc.formatting import GRID_COLS, GRID_ROWS
+
+    assert (GRID_ROWS, GRID_COLS) == (1, 10)
+    assert "\n" not in build_status_blocks(snap(cleared=50, open_=50))[1]["text"]["text"]
+
+
+def test_green_only_when_everything_cleared():
+    from lej_cc.formatting import BAR_CLEARED, progress_bar
+
+    assert progress_bar(100.0) == BAR_CLEARED * 10
+    for percent in (99.9, 98.9, 50.0, 0.1):
+        assert progress_bar(percent) != BAR_CLEARED * 10
+
+
+def test_a_held_shipment_always_puts_red_on_the_bar():
+    """Ten cells make a cell worth 10%, so even 0.05% takes one. Coarse on
+    purpose: the exact figure is printed underneath."""
+    from lej_cc.formatting import BAR_INSPECTION, progress_bar
+
+    for held in (0.05, 1.1, 21.0, 100.0):
+        assert BAR_INSPECTION in progress_bar(100.0 - held, inspection=held)
+
+
+def test_no_status_at_all_is_a_blank_bar():
+    from lej_cc.formatting import BAR_EMPTY, progress_bar
+
+    assert progress_bar(0.0) == BAR_EMPTY * 10
+
+
+def test_the_three_blocks_never_overlap_or_leave_a_gap():
+    from lej_cc.formatting import BAR_CLEARED, BAR_EMPTY, BAR_INSPECTION, progress_bar
+
+    for cleared, held in ((98.9, 1.1), (54, 21), (0, 0), (100, 0), (0, 100), (33, 33)):
+        drawn = progress_bar(cleared, inspection=held)
+        assert len(drawn) == 10
+        assert drawn == (
+            BAR_CLEARED * drawn.count(BAR_CLEARED)
+            + BAR_INSPECTION * drawn.count(BAR_INSPECTION)
+            + BAR_EMPTY * drawn.count(BAR_EMPTY)
+        )

@@ -110,10 +110,13 @@ def test_html_bar_width_matches_the_percentage():
     assert "width:100.00%" in render_html(snap(10, 10)).replace(" ", "")
 
 
-def test_html_colour_reflects_state():
-    assert "#2e7d32" in render_html(snap(1544, 1578))  # green, nearly done
-    assert "#e65100" in render_html(snap(1, 100))  # red, barely started
+def test_the_mail_uses_the_same_three_colours_as_the_card():
+    """One system: green released, red taken by customs, and nothing else."""
+    from lej_cc.emailer import CLEARED_COLOUR, INSPECTION_COLOUR
 
+    assert CLEARED_COLOUR in render_html(snap(1, 100))
+    assert CLEARED_COLOUR in render_html(snap(99, 100))
+    assert INSPECTION_COLOUR != CLEARED_COLOUR
 
 def test_completed_mail_says_when_it_finished():
     html = render_html(snap(10, 10), is_final=True)

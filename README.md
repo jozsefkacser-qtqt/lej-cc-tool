@@ -404,20 +404,22 @@ that were never going to change without a customs decision.
 So it gets its own bucket, and the numbers add up:
 
 ```
-✅ CC Finished — 936-02928693
-
-🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩        🟩  98.9%  cleared
-🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩        🟥   1.1%  inspection
-        … 8 more rows …         = 100.0% completed
-🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥
+✅ CC Finished — 936-02928693       📦 CC In progress — 936-02928693
+🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥               🟩🟩🟩🟩🟩🟥🟥⬜⬜⬜
+🟩  98.9%  cleared                  🟩  54.0%  cleared
+🟥   1.1%  inspection               🟥  21.0%  inspection
+    = 100.0% completed                  = 75.0% completed
 
 ✅ Cleared            ⏳ Open       ❌ Under inspection
 1,067 of 1,079        0            12  (1.1%)
 ```
 
-One cell per percent is what makes the two held cells honest. With ten
-cells, 1.1% has to occupy a whole one — drawing twelve held shipments out of
-1,079 as a tenth of the AWB, nine times larger than they are.
+There is no gradient by completeness. Shading the cleared block amber as an
+AWB progressed said what the length of the block already said, and it
+collided with the one colour that has to mean something specific. A cell is
+10%, so any inspection at all takes a whole one — coarse on purpose, because
+the exact figures are on the lines underneath. `PROGRESS_ROWS=2` with
+`PROGRESS_COLS=25` gets to 2% a cell if you want it finer.
 
 ### Three styles
 
@@ -448,7 +450,7 @@ prints `:cc-done:` as literal text instead of rendering it.
 
 | | |
 |---|---|
-| The bar | One cell per percent, in whichever of three styles `PROGRESS_STYLE` names — see below. No progress colour is red any more: red means customs has it, and a barely-started AWB used to render identically to a fully-inspected one. |
+| The bar | Ten cells, three colours, one meaning each: 🟩 released by customs, 🟥 taken for examination, ⬜ no status yet. An all-green bar means 100% cleared and nothing else does. `PROGRESS_ROWS` / `PROGRESS_COLS` make it finer — see below. |
 | Completeness | `cleared + inspection == total` means **complete**: tracking stops, because re-checking every 30 minutes does not change a customs decision. The final card names the held shipments and tells you how to re-check. |
 | `CC Completed` in the sheet | Filled **only when every line genuinely cleared**. A shipment still being examined has not completed customs clearance, whatever the tracker has stopped doing about it. |
 | The chase sheet | Still lists them, shaded and sorted to the bottom — not chaseable, but a row that disappears is a row nobody looks at again. |

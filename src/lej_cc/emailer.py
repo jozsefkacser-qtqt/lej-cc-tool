@@ -21,22 +21,18 @@ from email.utils import formataddr, make_msgid
 from pathlib import Path
 
 from .awb import format_display
-from .formatting import LOCAL_TZ, bar_colour
+from .formatting import LOCAL_TZ
 from .model import Snapshot, SnapshotDiff
 
 log = logging.getLogger(__name__)
 
-# Slack's colours, as hex, so the two channels read as one system.
-COLOURS = {"🟩": "#2e7d32", "🟨": "#ed6c02", "🟧": "#e65100", "🟥": "#c62828"}
-#: Shipments customs has taken. Red in both channels, and only ever this.
-INSPECTION_COLOUR = "#c62828"
+# The card's three colours as hex, so the two channels read as one system.
+CLEARED_COLOUR = "#2e7d32"       # green: released by customs
+INSPECTION_COLOUR = "#c62828"    # red: customs has taken it
+OPEN_COLOUR = "#d5d9de"          # grey: no status yet
 TRACK = "#e3e6ea"
 INK = "#1f3b57"
 MUTED = "#5b6b7a"
-
-
-def _percent_colour(percent: float) -> str:
-    return COLOURS[bar_colour(percent)]
 
 
 def _hhmm(value: datetime | None) -> str:
@@ -66,7 +62,7 @@ def render_html(
     """The mail body. Tables and inline styles, because email clients."""
     mawb = format_display(snapshot.mawb)
     done = snapshot.is_complete
-    colour = _percent_colour(snapshot.percent)
+    colour = CLEARED_COLOUR
     filled = max(0.0, min(100.0, snapshot.percent))
     held_width = max(0.0, min(100.0 - filled, snapshot.percent_inspection))
 
@@ -129,7 +125,7 @@ def render_html(
             )
         if diff.regressed:
             parts.append(
-                f'<b style="color:{COLOURS["🟥"]}">'
+                f'<b style="color:{INSPECTION_COLOUR}">'
                 f"{len(diff.regressed):,} reverted to not cleared</b>"
             )
         change = (

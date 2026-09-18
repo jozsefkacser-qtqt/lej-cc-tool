@@ -4,9 +4,10 @@ number. These cover the parts where getting it subtly wrong misleads."""
 from __future__ import annotations
 
 from lej_cc.formatting import (
-    BAR_COLOURS,
+    BAR_CLEARED,
+    BAR_EMPTY,
+    BAR_INSPECTION,
     BAR_WIDTH,
-    bar_colour,
     build_status_blocks,
     progress_bar,
 )
@@ -39,16 +40,28 @@ def test_any_progress_at_all_is_visible():
     assert progress_bar(0.5).count("⬜") == BAR_WIDTH - 1
 
 
-def test_colour_reflects_state():
-    assert bar_colour(97.8) == "🟩"
-    assert bar_colour(60.0) == "🟨"
-    assert bar_colour(2.0) == "🟧"
+def test_each_colour_means_exactly_one_thing():
+    """No gradient by completeness. Green is released, red is customs, white
+    is not known yet -- three colours, three states, nothing overloaded."""
+    assert len({BAR_CLEARED, BAR_INSPECTION, BAR_EMPTY}) == 3
+    assert (BAR_CLEARED, BAR_INSPECTION, BAR_EMPTY) == ("🟩", "🟥", "⬜")
 
 
-def test_no_progress_colour_is_red():
-    """Red means one thing: customs has taken the shipment. A barely-started
-    AWB and a fully-inspected one used to render identically."""
-    assert "🟥" not in {colour for _, colour in BAR_COLOURS}
+def test_cleared_is_green_at_any_percentage():
+    """It used to shade amber then orange as the bar shortened, which said
+    what the length already said and collided with the inspection colour."""
+    for percent in (2.0, 60.0, 97.8):
+        assert progress_bar(percent).startswith(BAR_CLEARED)
+
+
+def test_an_all_green_bar_means_everything_cleared():
+    assert progress_bar(100.0) == BAR_CLEARED * 10
+    assert progress_bar(99.9) != BAR_CLEARED * 10
+    assert progress_bar(98.9, inspection=1.1) == BAR_CLEARED * 9 + BAR_INSPECTION
+
+
+def test_nothing_known_yet_is_all_white():
+    assert progress_bar(0.0) == BAR_EMPTY * 10
 
 
 def test_card_leads_with_the_state_then_the_number():

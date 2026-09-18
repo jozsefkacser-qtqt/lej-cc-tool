@@ -54,12 +54,12 @@ class Settings(BaseSettings):
     #:         half the width, but no colour: Slack cannot colour text
     #:   bar   a single row of ten emoji; 1.1% has to take a whole cell
     progress_style: str = "grid"
-    #: Shape of the grid. 2 x 25 is two lines at 2% a cell; 5 x 20 or 4 x 25
-    #: give an exact 1% for five or four lines; 1 x 20 is a single line but
-    #: has to draw a 1.1% inspection as 5%. Above about 25 a row wraps on a
-    #: phone, which looks broken.
-    progress_rows: int = 2
-    progress_cols: int = 25
+    #: Shape of the grid. 1 x 10 is one row at 10% a cell -- coarse, but the
+    #: exact figures are printed underneath it. 1 x 20 halves that; 2 x 25 or
+    #: 4 x 25 get finer still at the cost of height. Above about 25 columns a
+    #: row wraps on a phone, which looks broken.
+    progress_rows: int = 1
+    progress_cols: int = 10
     #: Cell characters for cleared / under inspection / still open, if you
     #: would rather use your own. The point of this is narrow *custom* Slack
     #: emoji: a workspace that uploads them gets a bar that is both slim and

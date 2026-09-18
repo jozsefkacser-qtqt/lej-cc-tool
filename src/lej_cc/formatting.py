@@ -23,21 +23,17 @@ from .model import Snapshot, SnapshotDiff
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 BAR_WIDTH = 10
-BAR_EMPTY = "⬜"
-#: Cells for shipments customs has taken for examination. They fill the bar
-#: like cleared ones -- nothing here is going to move them -- but they are
-#: plainly not the same thing, so they read as their own block.
+#: Three colours, one meaning each. No gradient by completeness: shading the
+#: cleared block amber or orange as an AWB progressed said the same thing
+#: the length of the block already says, and it collided with the one colour
+#: that has to mean something specific.
+#:
+#:   green  released by customs -- an all-green bar means 100% cleared
+#:   red    customs has taken it for examination
+#:   white  no status yet
+BAR_CLEARED = "🟩"
 BAR_INSPECTION = "🟥"
-#: Filled colour by completeness, so the state of an AWB reads at a glance
-#: from across the room: green nearly done, amber mid-flight, orange barely
-#: started. Not red at the low end -- red is reserved for shipments customs
-#: has taken, and a barely-started AWB looked identical to a fully inspected
-#: one when both were red.
-BAR_COLOURS = ((95.0, "🟩"), (50.0, "🟨"), (0.0, "🟧"))
-
-
-def bar_colour(percent: float) -> str:
-    return next(colour for threshold, colour in BAR_COLOURS if percent >= threshold)
+BAR_EMPTY = "⬜"
 
 
 def _cells(percent: float, width: int) -> int:
@@ -70,7 +66,7 @@ def _split(total: int, percent: float, inspection: float) -> tuple[int, int, int
     return cleared, held, total - cleared - held
 
 
-def cells_for(percent: float, override: tuple[str, str, str] | None = None) -> tuple[str, str, str]:
+def cells_for(override: tuple[str, str, str] | None = None) -> tuple[str, str, str]:
     """The three cell characters: cleared, inspection, open.
 
     An override lets a workspace swap in its own narrow custom emoji --
@@ -78,7 +74,7 @@ def cells_for(percent: float, override: tuple[str, str, str] | None = None) -> t
     gives every standard emoji the same square box.
     """
     cleared, held, open_ = override or ("", "", "")
-    return (cleared or bar_colour(percent), held or BAR_INSPECTION, open_ or BAR_EMPTY)
+    return (cleared or BAR_CLEARED, held or BAR_INSPECTION, open_ or BAR_EMPTY)
 
 
 def progress_bar(
@@ -94,7 +90,7 @@ def progress_bar(
     them as separate colours says how much of that is actually released.
     """
     cleared, held, empty = _split(width, percent, inspection)
-    glyphs = cells_for(percent, override)
+    glyphs = cells_for(override)
     return glyphs[0] * cleared + glyphs[1] * held + glyphs[2] * empty
 
 
@@ -102,11 +98,11 @@ def progress_bar(
 #: as anything smaller than a tenth of the bar, which drew twelve held
 #: shipments out of 1,079 as if they were a tenth of the AWB. A hundred
 #: cells cost nothing to render and tell the truth to the nearest percent.
-#: Two rows of twenty-five by default: coloured, only two lines tall, and
-#: 2% per cell. A hundred cells is exact but five to ten lines deep, and a
-#: single row has to draw a 1.1% inspection as 4% or 5%.
-GRID_ROWS = 2
-GRID_COLS = 25
+#: One row of ten. Coarse -- a cell is 10%, so any inspection at all takes a
+#: whole one -- but the exact figures are on the lines underneath, and a
+#: single row is what reads best in a channel carrying several AWBs.
+GRID_ROWS = 1
+GRID_COLS = 10
 
 
 def progress_grid(
@@ -123,7 +119,7 @@ def progress_grid(
     """
     total = rows * cols
     cleared, held, empty = _split(total, percent, inspection)
-    glyphs = cells_for(percent, override)
+    glyphs = cells_for(override)
     # A list, not a string: a custom emoji cell is ten characters long, and
     # slicing the joined text would cut `:cc-done:` in half at the row break.
     cells = [glyphs[0]] * cleared + [glyphs[1]] * held + [glyphs[2]] * empty
@@ -191,7 +187,7 @@ def breakdown_lines(
     if style == "slim" and not override:
         done, held = f"`{SLIM_CLEARED}`", f"`{SLIM_INSPECTION}`"
     else:
-        glyphs = cells_for(snapshot.percent, override)
+        glyphs = cells_for(override)
         done, held = glyphs[0], glyphs[1]
 
     if not snapshot.inspection:
