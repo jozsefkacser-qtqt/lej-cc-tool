@@ -73,7 +73,9 @@ def test_card_leads_with_the_state_then_the_number():
     assert blocks[0]["type"] == "header"
     assert header.startswith("📦 CC In progress")
     assert "936-02927993" in header
-    assert "97.8%" in blocks[2]["text"]["text"]
+    assert "97.8%" in next(
+        b["text"]["text"] for b in blocks if b["type"] == "header" and "%" in b["text"]["text"]
+    )
 
 
 def test_a_finished_awb_says_so_in_the_header():

@@ -372,8 +372,11 @@ def build_status_blocks(
                 ),
             },
         },
-        # A header block, because this is the number people look for and a
-        # section renders it at the same size as everything else.
+        # Slack offers exactly one text size above body text -- the header
+        # block -- and renders it bold itself; plain_text takes no markup, so
+        # *asterisks* would show up literally. A divider is the only lever
+        # left for making this line read as the headline it is.
+        {"type": "divider"},
         {
             "type": "header",
             "text": {
@@ -392,8 +395,13 @@ def build_status_blocks(
             "type": "mrkdwn",
             "text": f"*✅ Cleared*\n{snapshot.cleared:,} of {snapshot.total:,}",
         },
-        {"type": "mrkdwn", "text": f"*⏳ Open*\n{snapshot.open_count:,}"},
     ]
+    if snapshot.open_count:
+        # Omitted at zero: on a finished card it is always zero, and a tile
+        # that only ever says nothing is a tile people learn to skip past.
+        fields.append(
+            {"type": "mrkdwn", "text": f"*⏳ Open*\n{snapshot.open_count:,}"}
+        )
     if held:
         fields.append(
             {
@@ -408,7 +416,7 @@ def build_status_blocks(
         {
             "type": "mrkdwn",
             "text": (
-                f"*🧾 Declaration lines*\n{snapshot.items_cleared:,} of "
+                f"*🧾 Customs lines*\n{snapshot.items_cleared:,} of "
                 f"{snapshot.items_total:,} "
                 f"({snapshot.items_percent:.0f}%)"
             ),

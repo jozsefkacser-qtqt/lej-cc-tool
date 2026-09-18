@@ -91,7 +91,7 @@ def render_html(
         )
     stats.append(
         _stat(
-            "Declaration lines",
+            "Customs lines",
             f"{snapshot.items_cleared:,} of {snapshot.items_total:,}",
         )
     )
@@ -221,7 +221,7 @@ def render_text(
         "",
         f"Cleared:           {snapshot.cleared:,} of {snapshot.total:,}",
         f"Open:              {snapshot.open_count:,}",
-        f"Declaration lines: {snapshot.items_cleared:,} of {snapshot.items_total:,}",
+        f"Customs lines:     {snapshot.items_cleared:,} of {snapshot.items_total:,}",
     ]
     if snapshot.inspection:
         lines.insert(

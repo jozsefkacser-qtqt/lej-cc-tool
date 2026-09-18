@@ -49,7 +49,7 @@ COLUMNS: list[tuple[str, str]] = [
     ("Open", "open"),
     ("Under inspection", "inspection"),
     ("Unrecognised", "other"),
-    ("Declaration lines", "lines_total"),
+    ("Customs lines", "lines_total"),
     ("Lines cleared", "lines_cleared"),
     ("Tracking started", "started_at"),
     ("First clearance", "first_clearance"),

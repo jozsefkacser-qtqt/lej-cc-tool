@@ -201,6 +201,27 @@ def test_a_barely_started_awb_does_not_look_inspected():
 # --- the card ------------------------------------------------------------
 
 
+def headers(blocks: list[dict]) -> list[str]:
+    """Header texts in order. Indexing into `blocks` breaks every time a
+    divider or a conditional section moves; roles do not move."""
+    return [b["text"]["text"] for b in blocks if b["type"] == "header"]
+
+
+def headline(blocks: list[dict]) -> str:
+    """The big completion line -- the last header on the card."""
+    return headers(blocks)[-1]
+
+
+def section_after_headline(blocks: list[dict]) -> str:
+    seen_headline = False
+    for block in blocks:
+        if block["type"] == "header":
+            seen_headline = "completed" in block["text"]["text"]
+        elif seen_headline and block["type"] == "section" and "text" in block:
+            return block["text"]["text"]
+    return ""
+
+
 def _text(blocks: list[dict]) -> str:
     out = []
     for block in blocks:
@@ -232,10 +253,11 @@ def test_a_whole_percentage_drops_its_decimal():
 
 def test_the_headline_number_is_its_own_header_block():
     """A section renders it at the size of everything else; this is the
-    number people are looking for."""
+    number people are looking for, and Slack has exactly one size above
+    body text."""
     blocks = build_status_blocks(snap(cleared=54, inspection=21, open_=25))
-    assert blocks[2]["type"] == "header"
-    assert blocks[2]["text"]["text"] == "❌  75% completed"
+    assert headline(blocks) == "❌  75% completed"
+    assert len(headers(blocks)) == 2  # the AWB, then the number
 
 
 def test_one_icon_says_whether_anything_needs_doing():
@@ -249,10 +271,9 @@ def test_one_icon_says_whether_anything_needs_doing():
 def test_the_header_and_the_headline_never_contradict():
     for s in (snap(cleared=10), snap(cleared=9, inspection=1), snap(cleared=5, open_=5)):
         blocks = build_status_blocks(s)
-        mark = blocks[2]["text"]["text"].split()[0]
         if not s.is_complete:
             continue  # in progress keeps its own 📦
-        assert blocks[0]["text"]["text"].startswith(mark)
+        assert headers(blocks)[0].startswith(headline(blocks).split()[0])
 
 
 def test_the_card_names_the_held_shipments():
@@ -271,9 +292,9 @@ def test_finished_never_reads_as_fully_cleared():
     the breakdown have to stop it reading as "everything was released"."""
     blocks = build_status_blocks(snap(cleared=1067, inspection=12))
 
-    assert blocks[0]["text"]["text"].startswith("🟠 CC Finished")
-    assert blocks[2]["text"]["text"] == "🟠  100% completed"
-    breakdown = blocks[3]["text"]["text"]
+    assert headers(blocks)[0].startswith("🟠 CC Finished")
+    assert headline(blocks) == "🟠  100% completed"
+    breakdown = section_after_headline(blocks)
     assert "98.9%* cleared" in breakdown
     assert "1.1%* inspection" in breakdown
 
@@ -556,3 +577,30 @@ def test_the_status_card_lists_the_breakdown():
     body = build_status_report(Health(), [job], settings)[0]["text"]["text"]
 
     assert "54.0% + 21.0% inspection = 75.0%" in body
+
+
+def test_the_open_tile_is_dropped_when_there_is_no_open_work():
+    """On a finished card it is always zero, and a tile that only ever says
+    nothing is one people learn to skip past."""
+    def tiles(s):
+        section = next(b for b in build_status_blocks(s) if b.get("fields"))
+        return [f["text"] for f in section["fields"]]
+
+    assert not any("Open" in t for t in tiles(snap(cleared=989, inspection=11)))
+    assert not any("Open" in t for t in tiles(snap(cleared=100)))
+    assert any("*⏳ Open*\n25" in t for t in tiles(snap(cleared=54, inspection=21, open_=25)))
+
+
+def test_the_lines_tile_says_customs_lines():
+    """"Declaration lines" needed explaining every time somebody new saw it."""
+    section = next(b for b in build_status_blocks(snap(cleared=10)) if b.get("fields"))
+    assert any("Customs lines" in f["text"] for f in section["fields"])
+
+
+def test_a_divider_sets_the_headline_apart():
+    """Slack has one text size above body text and renders it bold itself --
+    plain_text takes no markup, so a header cannot be made bigger or bolder.
+    Whitespace is the only lever left."""
+    blocks = build_status_blocks(snap(cleared=54, inspection=21, open_=25))
+    kinds = [b["type"] for b in blocks]
+    assert kinds[kinds.index("divider") + 1] == "header"

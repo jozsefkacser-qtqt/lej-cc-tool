@@ -412,9 +412,19 @@ So it gets its own bucket, and the numbers add up:
 🟩  98.9% cleared                   🟩  54% cleared
 🟥   1.1% inspection                🟥  21% inspection
 
-✅ Cleared            ⏳ Open       ❌ Under inspection
-1,067 of 1,079        0            12  (1.1%)
+✅ Cleared            ❌ Under inspection    🧾 Customs lines
+1,067 of 1,079        12  (1.1%)            2,134 of 2,158
 ```
+
+`⏳ Open` appears only when there is open work — on a finished card it is
+always zero, and a tile that only ever says nothing is one people skip past.
+
+`🧾 Customs lines` is PortGround's `Number of items` column, which despite
+its name counts **customs declaration line items**, not parcels — one line
+per distinct commodity code. It matched `Number of hs codes` on every one of
+the 1,605 rows of the reference export. Customs work scales with lines
+rather than shipments, so an AWB with 3,640 shipments and 12,000 lines is a
+much bigger job than one with 3,640 shipments and 3,700 lines.
 
 One icon says whether the AWB needs anything, and the header carries the
 same one so they cannot contradict each other:

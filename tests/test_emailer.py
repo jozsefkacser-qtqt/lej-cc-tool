@@ -101,7 +101,7 @@ def test_html_leads_with_the_number():
     html = render_html(snap(1544, 1578))
     assert "97.8%" in html
     assert "1,544 of 1,578" in html
-    assert "Declaration lines" in html
+    assert "Customs lines" in html
     assert "<table" in html  # email clients need tables, not flexbox
 
 
