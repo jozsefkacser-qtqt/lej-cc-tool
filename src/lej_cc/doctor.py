@@ -12,6 +12,7 @@ Nothing here prints a secret: tokens are shown as a prefix and a length.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import tempfile
 import time
@@ -22,6 +23,10 @@ from pathlib import Path
 SAMPLE_MAWB = "48820744846"
 
 OK, FAIL, WARN = "  ok  ", " FAIL ", " warn "
+
+#: Titles the bot should not be pointed at. Writing its own tab into one
+#: of these is safe but wrong: the reports pull from the central sheet.
+HAND_MAINTAINED = re.compile(r"daily\s*report|weekly\s*report", re.I)
 
 
 @dataclass
@@ -255,6 +260,53 @@ def check_inbox(settings) -> Result:  # noqa: ANN001
     )
 
 
+def check_sheet(settings) -> Result:  # noqa: ANN001
+    """Can the bot reach the sheet, and is it the one it should be writing to?
+
+    Two failures this catches before they happen. A service account that was
+    never shared on the file fails with a 404 that reads like a wrong id, so
+    the detail here says which of the two it is. And a GOOGLE_SHEET_ID left
+    pointing at a hand-maintained report would have the bot add its tab to a
+    live operational document -- harmless to the existing tabs, but not what
+    anyone intended, and much easier to notice here than afterwards.
+    """
+    from .sheets import SheetExporter
+
+    exporter = SheetExporter(settings)
+    if not exporter.enabled:
+        return Result("sheet", OK, "off (GOOGLE_SHEET_ID / GOOGLE_CREDENTIALS_FILE unset)")
+
+    path = settings.google_credentials_file
+    if path is None or not Path(path).is_file():
+        return Result("sheet", FAIL, f"no credentials file at {path}")
+
+    try:
+        title, tabs = exporter.describe()
+    except Exception as exc:  # noqa: BLE001 - auth, network, permissions
+        detail = str(exc)
+        if "404" in detail or "not found" in detail.lower():
+            detail = (
+                "spreadsheet not found. Either GOOGLE_SHEET_ID is wrong, or the "
+                "sheet has not been shared with the service account as Editor."
+            )
+        return Result("sheet", FAIL, detail)
+
+    tab = settings.google_sheet_tab
+    where = f"{title!r}, tab {tab!r}"
+
+    if HAND_MAINTAINED.search(title):
+        return Result(
+            "sheet",
+            WARN,
+            f"{where} — that looks like a hand-maintained report. The bot only "
+            "ever writes its own tab, but point it at the central sheet instead "
+            "and pull from there with IMPORTRANGE (docs/CENTRAL-SHEET.md).",
+        )
+    if tab not in tabs:
+        return Result("sheet", OK, f"{where} (created on first write)")
+    return Result("sheet", OK, where)
+
+
 def check_slack(settings) -> Result:  # noqa: ANN001
     from slack_sdk import WebClient
     from slack_sdk.errors import SlackApiError
@@ -335,6 +387,7 @@ def run(mawb: str = SAMPLE_MAWB, *, offline: bool = False) -> list[Result]:
 
     results.append(check_slack(settings))
     results.append(check_email(settings))
+    results.append(check_sheet(settings))
     results.append(check_autodetect(settings))
     results.append(check_inbox(settings))
     results.append(check_portground(settings, mawb))

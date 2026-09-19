@@ -91,12 +91,13 @@ class _Exec:
 class FakeSheets:
     """Stands in for the Sheets API. `rows` includes the header at index 0."""
 
-    def __init__(self, tabs=("CC_BOT",), fail=False):
+    def __init__(self, tabs=("CC_BOT",), fail=False, title="CC Bot Central"):
         self.header: list | None = None
         self.rows: list[list] = []
         self.tabs = list(tabs)
         self.updates = self.appends = 0
         self.fail = fail
+        self.title = title
 
     @property
     def keys(self):
@@ -105,7 +106,12 @@ class FakeSheets:
     def get(self, spreadsheetId):  # noqa: N803
         if self.fail:
             raise RuntimeError("403 permission denied")
-        return _Exec({"sheets": [{"properties": {"title": t}} for t in self.tabs]})
+        return _Exec(
+            {
+                "properties": {"title": self.title},
+                "sheets": [{"properties": {"title": t}} for t in self.tabs],
+            }
+        )
 
     def batchUpdate(self, spreadsheetId, body):  # noqa: N802, N803
         for request in body["requests"]:
@@ -246,3 +252,57 @@ def test_export_is_off_until_it_is_configured(tmp_path, store):
     job = store.create_job("93602927993", "C1", "U1")
     assert SheetExporter(off).enabled is False
     assert SheetExporter(off).upsert(build_row(job, snap(1, 2))) is False
+
+
+# --- describe: what preflight asks the sheet ----------------------------
+
+
+def test_describe_names_the_spreadsheet_and_its_tabs(settings):
+    fake = FakeSheets(tabs=("Sheet1", "CC_BOT"), title="CC Bot Central")
+    title, tabs = exporter_with(settings, fake).describe()
+
+    assert title == "CC Bot Central"
+    assert tabs == {"Sheet1", "CC_BOT"}
+
+
+def test_describe_raises_so_preflight_can_say_why(settings):
+    fake = FakeSheets(fail=True)
+    with pytest.raises(RuntimeError):
+        exporter_with(settings, fake).describe()
+
+
+# --- the column contract ------------------------------------------------
+
+
+def test_the_documented_column_numbers_still_point_where_the_docs_say():
+    """README.md and docs/CENTRAL-SHEET.md quote these positions in formulas.
+
+    Adding a column in the middle would silently move every VLOOKUP in the
+    report onto the wrong field -- which is exactly what happened once:
+    `Under inspection` was inserted and the documented `CC Completed` index
+    of 14 quietly started returning `First clearance`. Append, never insert.
+    """
+    fields = [field for _, field in COLUMNS]
+    one_based = {field: i for i, field in enumerate(fields, start=1)}
+
+    assert len(COLUMNS) == 23, "the documented range is CC_BOT!$A:$W"
+    assert one_based["cc_completed"] == 15
+    assert one_based["percent"] == 5
+    assert one_based["inspection"] == 9
+    assert one_based["state"] == 4
+    # The lookup keys the report matches on.
+    assert one_based["awb"] == 1
+    assert one_based["tracked_as"] == 2
+
+
+def test_the_docs_quote_the_indexes_this_test_pins():
+    """Catches a formula edited in the docs without the test being updated."""
+    from pathlib import Path
+
+    docs = Path(__file__).resolve().parents[1]
+    readme = (docs / "README.md").read_text()
+    guide = (docs / "docs" / "CENTRAL-SHEET.md").read_text()
+
+    for text in (readme, guide):
+        assert 'CC_BOT!$A:$W' in text
+        assert ", 15, FALSE" in text

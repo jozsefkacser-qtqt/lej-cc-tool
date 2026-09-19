@@ -230,6 +230,17 @@ class SheetExporter:
         self._service = build("sheets", "v4", credentials=credentials).spreadsheets()
         return self._service
 
+    def describe(self) -> tuple[str, set[str]]:
+        """The spreadsheet's title and its tab names. Raises on failure.
+
+        Preflight needs to say *which* sheet the bot is pointed at, and the
+        Google plumbing stays here rather than leaking into the checks.
+        """
+        meta = self._connect().get(spreadsheetId=self.settings.google_sheet_id).execute()
+        title = meta.get("properties", {}).get("title", "(untitled)")
+        tabs = {s["properties"]["title"] for s in meta.get("sheets", [])}
+        return title, tabs
+
     def _ensure_tab(self, service: Any) -> None:
         """Create the tab and its header row the first time."""
         if self._header_checked:

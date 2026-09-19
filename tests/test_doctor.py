@@ -170,3 +170,105 @@ def test_every_bad_channel_is_named_not_just_the_first(tmp_path, monkeypatch):
     result = doctor.check_autodetect(_settings(tmp_path, "C0AAA,C0BBB"))
 
     assert "C0AAA" in result.detail and "C0BBB" in result.detail
+
+
+# --- the sheet ----------------------------------------------------------
+
+
+def _sheet_settings(tmp_path, **kwargs):
+    from lej_cc.config import Settings
+
+    return Settings(
+        slack_bot_token="xoxb-a",
+        slack_app_token="xapp-a",
+        portground_api_key="k",
+        database_path=tmp_path / "x.sqlite3",
+        download_dir=tmp_path / "downloads",
+        **kwargs,
+    )
+
+
+def test_sheet_check_is_quiet_when_the_export_is_off(tmp_path):
+    result = doctor.check_sheet(_sheet_settings(tmp_path))
+    assert not result.failed
+    assert "off" in result.detail
+
+
+def test_missing_credentials_file_is_named(tmp_path):
+    settings = _sheet_settings(
+        tmp_path,
+        google_sheet_id="sheet-abc",
+        google_credentials_file=tmp_path / "nope.json",
+    )
+    result = doctor.check_sheet(settings)
+    assert result.failed
+    assert "nope.json" in result.detail
+
+
+def test_a_404_is_reported_as_wrong_id_or_not_shared(tmp_path, monkeypatch):
+    """The two causes look identical from the API and need different fixes."""
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path, google_sheet_id="sheet-abc", google_credentials_file=key
+    )
+
+    def boom(self):
+        raise RuntimeError("<HttpError 404 when requesting ...>")
+
+    monkeypatch.setattr("lej_cc.sheets.SheetExporter.describe", boom)
+    result = doctor.check_sheet(settings)
+
+    assert result.failed
+    assert "shared with the service account" in result.detail
+
+
+def test_pointing_at_a_hand_maintained_report_warns(tmp_path, monkeypatch):
+    """A GOOGLE_SHEET_ID left on a live report is the mistake worth catching."""
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path, google_sheet_id="sheet-abc", google_credentials_file=key
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.SheetExporter.describe",
+        lambda self: ("Daily Report_LEJ", {"W33", "W34"}),
+    )
+    result = doctor.check_sheet(settings)
+
+    assert result.status is doctor.WARN
+    assert not result.failed  # a warning, not a stop
+    assert "CENTRAL-SHEET.md" in result.detail
+
+
+def test_the_central_sheet_passes(tmp_path, monkeypatch):
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path, google_sheet_id="sheet-abc", google_credentials_file=key
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.SheetExporter.describe",
+        lambda self: ("CC Bot Central", {"CC_BOT"}),
+    )
+    result = doctor.check_sheet(settings)
+
+    assert not result.failed
+    assert result.status is doctor.OK
+    assert "CC Bot Central" in result.detail
+
+
+def test_a_tab_that_does_not_exist_yet_is_not_a_failure(tmp_path, monkeypatch):
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path, google_sheet_id="sheet-abc", google_credentials_file=key
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.SheetExporter.describe",
+        lambda self: ("CC Bot Central", {"Sheet1"}),
+    )
+    result = doctor.check_sheet(settings)
+
+    assert not result.failed
+    assert "created on first write" in result.detail

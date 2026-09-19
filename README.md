@@ -165,33 +165,44 @@ set. Every poll keeps that AWB's line current: shipment counts, percent,
 first and last clearance, how long clearance took, checks, state, who asked
 for it.
 
-**It writes only to its own tab** (`GOOGLE_SHEET_TAB`, default `CC_BOT`),
-created on first use. *Daily Report_LEJ* carries hundreds of rows, merged
-headers, formulas and an SLA chain that people edit by hand; a bot
-inferring column positions and writing into that is one offset away from
-corrupting a live operational document. Pull the values into the report
-instead:
+The spreadsheet is the bot's own -- **CC Bot Central** -- and it writes
+only to its own tab there (`GOOGLE_SHEET_TAB`, default `CC_BOT`), created on
+first use. *Daily Report_LEJ* is twenty tabs of merged headers, formulas and
+an SLA chain that people edit all day; a bot inferring column positions and
+writing into that is one offset away from corrupting a live operational
+document, silently. The report reaches across instead, with a read:
 
 ```
-=IFERROR(VLOOKUP($A2, CC_BOT!$A:$V, 14, FALSE), "")
+=IFERROR(VLOOKUP($A11, IMPORTRANGE("<central sheet id>","CC_BOT!$A:$W"), 15, FALSE), "")
 ```
 
-Column 14 is **CC Completed** -- the same milestone the report's SLA chain
-already has a slot for, which is the point of the whole exercise. The AWB
-is written as `936-02927993`, matching the report's own format, so the
-lookup needs no massaging.
+Column 15 is **CC Completed** -- the milestone the report's SLA chain
+already has a slot for, which is the point of the whole exercise.
+
+Column A of the report holds two shapes, `936-02927993` waybills and
+`OyTM202608277404` booking references, and the bot writes whichever it was
+given in its own column A, with the booking reference also in column B. A
+lookup that tries both matches either.
 
 `CC Completed` is only filled once **everything** has cleared. A timestamp
-there while shipments are still open would be a false milestone, and the
-SLA calculation downstream would believe it.
+there while shipments are still open -- or while customs is still examining
+one -- would be a false milestone, and the SLA calculation downstream would
+believe it.
 
 ### Setup
 
+[`docs/CENTRAL-SHEET.md`](docs/CENTRAL-SHEET.md) has the whole thing: the
+service account, the sharing step people miss, the column map, and the
+formulas to paste into the report. In short:
+
 1. Google Cloud console → create a service account → create a JSON key
 2. Save the key on the server, e.g. `secrets/service-account.json`
-3. **Share the spreadsheet with the service account's email address, as
+3. **Share the central sheet with the service account's email address, as
    Editor** -- this is the step people miss
-4. Put the id and the key path in `.env`, restart
+4. Put the id and the key path in `.env`, then `awb doctor` and restart
+
+`lej-cc-doctor` names the spreadsheet the bot is actually pointed at, and
+warns if that turns out to be a hand-maintained report.
 
 ### Backfilling
 
