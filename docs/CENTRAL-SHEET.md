@@ -87,9 +87,13 @@ must not have access to the reports.
 
 ### 3. Install the Google client
 
-It is an optional extra, so a plain install does not carry it:
+It is an optional extra, so a plain install does not carry it. Use the
+virtualenv's own pip, so it cannot land in the system Python instead:
 
-    cd ~/lej-cc-tool && make google
+    cd ~/lej-cc-tool
+    .venv/bin/pip install -e '.[google]'
+
+(`make google` is the same thing, and only correct inside an activated venv.)
 
 Skip this and `awb doctor` fails the sheet check with
 `the Google client libraries are not installed`.

@@ -288,8 +288,9 @@ def check_sheet(settings) -> Result:  # noqa: ANN001
         return Result(
             "sheet",
             FAIL,
-            "the Google client libraries are not installed. Run: make google "
-            "(or: pip install -e '.[google]'), then restart.",
+            "the Google client libraries are not installed. In the repo, run: "
+            "\".venv/bin/pip install -e '.[google]'\" — then restart. "
+            "(`make google` does the same inside an activated venv.)",
         )
     except Exception as exc:  # noqa: BLE001 - auth, network, permissions
         detail = str(exc)

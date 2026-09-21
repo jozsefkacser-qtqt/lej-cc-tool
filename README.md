@@ -199,8 +199,8 @@ formulas to paste into the report. In short:
 2. Save the key on the server, e.g. `secrets/service-account.json`
 3. **Share the central sheet with the service account's email address, as
    Editor** -- this is the step people miss
-4. `make google` -- the Google client is an optional extra, not installed by
-   default
+4. `.venv/bin/pip install -e '.[google]'` -- the Google client is an
+   optional extra, not installed by default
 5. Put the id and the key path in `.env`, then `awb doctor` and restart
 
 `lej-cc-doctor` names the spreadsheet the bot is actually pointed at, and

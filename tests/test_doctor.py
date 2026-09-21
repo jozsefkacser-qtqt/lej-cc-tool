@@ -289,5 +289,7 @@ def test_a_missing_google_client_says_how_to_install_it(tmp_path, monkeypatch):
     result = doctor.check_sheet(settings)
 
     assert result.failed
-    assert "make google" in result.detail
+    # The command must name the virtualenv's pip: a plain `pip install` from
+    # an unactivated shell lands in the system Python and changes nothing.
+    assert ".venv/bin/pip install -e '.[google]'" in result.detail
     assert "No module named" not in result.detail
