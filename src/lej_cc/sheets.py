@@ -200,6 +200,25 @@ def apply_snapshot_record(row: SheetRow, record) -> SheetRow:  # noqa: ANN001
     return row
 
 
+def build_service(settings) -> Any:  # noqa: ANN001 - avoids a circular import
+    """A Sheets API handle for this service account.
+
+    Shared, because reading someone else's spreadsheet -- the month tab of a
+    report, to learn which AWBs exist -- uses the same credentials as writing
+    our own. Which spreadsheets it can touch is decided by who the file is
+    shared with, not here.
+    """
+    # Imported lazily so the bot runs without the Google libraries when the
+    # export is switched off, which is the default.
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+
+    credentials = service_account.Credentials.from_service_account_file(
+        str(settings.google_credentials_file), scopes=SCOPES
+    )
+    return build("sheets", "v4", credentials=credentials).spreadsheets()
+
+
 class SheetExporter:
     """Upserts rows into one tab. Never raises into the polling cycle."""
 
@@ -217,17 +236,8 @@ class SheetExporter:
     # --- Google plumbing -------------------------------------------------
 
     def _connect(self) -> Any:
-        if self._service is not None:
-            return self._service
-        # Imported lazily so the bot runs without the Google libraries when
-        # the export is switched off, which is the default.
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
-
-        credentials = service_account.Credentials.from_service_account_file(
-            str(self.settings.google_credentials_file), scopes=SCOPES
-        )
-        self._service = build("sheets", "v4", credentials=credentials).spreadsheets()
+        if self._service is None:
+            self._service = build_service(self.settings)
         return self._service
 
     def describe(self) -> tuple[str, set[str]]:

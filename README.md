@@ -206,6 +206,33 @@ formulas to paste into the report. In short:
 `lej-cc-doctor` names the spreadsheet the bot is actually pointed at, and
 warns if that turns out to be a hand-maintained report.
 
+### Starting a whole month at once
+
+The tracker only knows the AWBs somebody typed `/awb` for, which on a report
+carrying forty a month leaves most rows with nothing behind them. This reads
+the list the operation already maintains:
+
+```bash
+lej-cc-track --from-sheet <report id> --tab 2026.09 --dry-run   # look first
+lej-cc-track --from-sheet <report id> --tab 2026.09 --yes
+lej-cc-track --from-file month.csv --limit 10                   # or from a file
+```
+
+It finds the AWB column by its header rather than by position, skips the
+ones already being tracked, and names the ones that look like typos instead
+of silently dropping them -- an 11-digit number failing its check digit is
+somebody's mistake, a legend row is not.
+
+**Starts are staggered**, two minutes apart by default. Each AWB triggers an
+export PortGround builds on demand, and the scheduler claims twenty jobs at
+a time; forty due at once is a thundering herd against a system other people
+use. The preview says what the ongoing polling will cost before you commit
+to it.
+
+Reading a Google Sheet needs the report shared with the service account as
+**Reader** -- the bot has no reason to be able to change an operational
+report. Set `REPORT_SHEET_ID` to skip passing the id every time.
+
 ### Backfilling
 
 The live path keeps rows current as it polls. To write everything the bot

@@ -154,6 +154,10 @@ class Settings(BaseSettings):
     #: The tab the bot owns. It is created on first use and written to
     #: exclusively -- the hand-maintained tabs are never touched.
     google_sheet_tab: str = "CC_BOT"
+    #: The operational report `lej-cc-track --from-sheet` reads its AWB list
+    #: from. Share it with the service account as **Reader**: the bot has no
+    #: reason to be able to change it, and read-only means it cannot.
+    report_sheet_id: str = ""
 
     # --- inbound email: start a check by mailing a shared mailbox ---
     #: Leave imap_host empty to keep the trigger off. It is off by default.

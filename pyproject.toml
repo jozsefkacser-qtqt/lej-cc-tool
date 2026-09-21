@@ -26,6 +26,7 @@ lej-cc = "lej_cc.main:main"
 lej-cc-doctor = "lej_cc.doctor:main"
 lej-cc-check = "lej_cc.cli:main"
 lej-cc-sheet-sync = "lej_cc.sheet_sync:main"
+lej-cc-track = "lej_cc.bulk:main"
 lej-cc-stats = "lej_cc.stats_cli:main"
 
 [build-system]
