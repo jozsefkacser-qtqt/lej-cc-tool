@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt fixtures run doctor docker \
+.PHONY: install dev google test lint fmt fixtures run doctor docker \
         shortcut start stop restart update status logs
 
 install:
@@ -6,6 +6,10 @@ install:
 
 dev:
 	pip install -e ".[dev]"
+
+# The Google client is optional: only needed for the central sheet.
+google:
+	pip install -e ".[google]"
 
 test:
 	PYTHONPATH=src python -m pytest -q

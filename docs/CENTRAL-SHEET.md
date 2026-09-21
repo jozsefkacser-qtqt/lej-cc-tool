@@ -85,7 +85,16 @@ Open the key file and copy the `client_email` value — it looks like
 that address as **Editor**. Nothing else needs sharing; the service account
 must not have access to the reports.
 
-### 3. Point the bot at it
+### 3. Install the Google client
+
+It is an optional extra, so a plain install does not carry it:
+
+    cd ~/lej-cc-tool && make google
+
+Skip this and `awb doctor` fails the sheet check with
+`the Google client libraries are not installed`.
+
+### 4. Point the bot at it
 
 In `.env`:
 
@@ -98,7 +107,7 @@ Then:
     awb doctor      # the "sheet" line should name CC Bot Central
     awb restart
 
-### 4. Backfill what is already tracked
+### 5. Backfill what is already tracked
 
     ~/lej-cc-tool/.venv/bin/lej-cc-sheet-sync --dry-run   # look first
     ~/lej-cc-tool/.venv/bin/lej-cc-sheet-sync

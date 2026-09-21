@@ -282,6 +282,15 @@ def check_sheet(settings) -> Result:  # noqa: ANN001
 
     try:
         title, tabs = exporter.describe()
+    except ImportError:
+        # The Google client is an optional extra, so a sheet configured on a
+        # plain install fails at the first import with a bare module name.
+        return Result(
+            "sheet",
+            FAIL,
+            "the Google client libraries are not installed. Run: make google "
+            "(or: pip install -e '.[google]'), then restart.",
+        )
     except Exception as exc:  # noqa: BLE001 - auth, network, permissions
         detail = str(exc)
         if "404" in detail or "not found" in detail.lower():

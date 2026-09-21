@@ -272,3 +272,22 @@ def test_a_tab_that_does_not_exist_yet_is_not_a_failure(tmp_path, monkeypatch):
 
     assert not result.failed
     assert "created on first write" in result.detail
+
+
+def test_a_missing_google_client_says_how_to_install_it(tmp_path, monkeypatch):
+    """The client is an optional extra; "No module named 'google'" is not a fix."""
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path, google_sheet_id="sheet-abc", google_credentials_file=key
+    )
+
+    def missing(self):
+        raise ModuleNotFoundError("No module named 'google'")
+
+    monkeypatch.setattr("lej_cc.sheets.SheetExporter.describe", missing)
+    result = doctor.check_sheet(settings)
+
+    assert result.failed
+    assert "make google" in result.detail
+    assert "No module named" not in result.detail
