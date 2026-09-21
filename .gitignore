@@ -5,6 +5,14 @@ venv/
 .env
 # set-secrets.sh keeps a copy of the previous .env. Same secrets, same rules.
 .env.backup-*
+# Service-account keys and anything else credential-shaped. The Google key is
+# a private key in a file whose name nobody recognises as dangerous, and a
+# single `git add -A` would publish it.
+/secrets/
+*-service-account*.json
+service-account.json
+*.pem
+*.p12
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
