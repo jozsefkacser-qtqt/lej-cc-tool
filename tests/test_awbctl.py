@@ -401,3 +401,66 @@ def test_autostart_says_nothing_when_there_is_nothing_to_start(install):
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+# --- reaching the other tools -------------------------------------------
+
+
+def test_awb_track_passes_its_arguments_straight_through(install):
+    """`awb track --from-sheet --tab X --dry-run` must arrive intact.
+
+    The venv is not on PATH, so without this proxy the command is only
+    reachable as ~/lej-cc-tool/.venv/bin/lej-cc-track -- which is how a
+    useful command ends up never being run.
+    """
+    root, env = install()
+    tool = root / ".venv" / "bin" / "lej-cc-track"
+    tool.write_text('#!/usr/bin/env bash\necho "ARGS: $*"\n')
+    tool.chmod(0o755)
+
+    result = run(root, env, "track", "--from-sheet", "--tab", "2026.09", "--dry-run")
+
+    assert result.returncode == 0
+    assert "ARGS: --from-sheet --tab 2026.09 --dry-run" in result.stdout
+
+
+def test_a_missing_tool_says_how_to_install_it(install):
+    root, env = install()
+    result = run(root, env, "track", "--dry-run")
+
+    assert result.returncode != 0
+    assert "make dev" in result.stderr
+
+
+def test_a_tools_exit_code_is_not_swallowed(install):
+    """A dry run that found a problem must fail the shell that called it."""
+    root, env = install()
+    tool = root / ".venv" / "bin" / "lej-cc-track"
+    tool.write_text("#!/usr/bin/env bash\nexit 2\n")
+    tool.chmod(0o755)
+
+    assert run(root, env, "track").returncode == 2
+
+
+@pytest.mark.parametrize(
+    ("subcommand", "tool"),
+    [
+        ("track", "lej-cc-track"),
+        ("check", "lej-cc-check"),
+        ("sync", "lej-cc-sheet-sync"),
+        ("stats", "lej-cc-stats"),
+        ("doctor", "lej-cc-doctor"),
+    ],
+)
+def test_every_proxy_reaches_its_tool(install, subcommand, tool):
+    root, env = install()
+    path = root / ".venv" / "bin" / tool
+    path.write_text(f'#!/usr/bin/env bash\necho "ran {tool}"\n')
+    path.chmod(0o755)
+
+    assert f"ran {tool}" in run(root, env, subcommand).stdout
+
+
+def test_the_help_lists_them(install):
+    root, env = install()
+    assert "awb track" in run(root, env, "help").stdout

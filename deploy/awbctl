@@ -245,10 +245,23 @@ cmd_logs() {
     tail -n 40 -f "$LOG"
 }
 
-cmd_doctor() {
-    [[ -x "$ROOT/.venv/bin/lej-cc-doctor" ]] || die "run: cd $ROOT && make dev"
-    "$ROOT/.venv/bin/lej-cc-doctor" "$@"
+# The venv is deliberately not on PATH -- putting it there would shadow the
+# system python for every shell. So the tools it installs are reached through
+# `awb`, which knows where they live. Anything else means typing
+# ~/lej-cc-tool/.venv/bin/lej-cc-whatever, which is how a useful command ends
+# up unused.
+run_tool() {
+    local tool="$1"; shift
+    local path="$ROOT/.venv/bin/$tool"
+    [[ -x "$path" ]] || die "$tool is not installed — run: cd $ROOT && make dev"
+    "$path" "$@"
 }
+
+cmd_doctor() { run_tool lej-cc-doctor "$@"; }
+cmd_track()  { run_tool lej-cc-track "$@"; }
+cmd_sync()   { run_tool lej-cc-sheet-sync "$@"; }
+cmd_check()  { run_tool lej-cc-check "$@"; }
+cmd_stats()  { run_tool lej-cc-stats "$@"; }
 
 cmd_autostart() {
     # Called from ~/.bashrc, so it has to be fast and silent when there is
@@ -318,6 +331,14 @@ Then, from anywhere:
   awb stop        stop it (it says goodbye in Slack first)
   awb doctor      check the configuration and credentials
 
+  awb track       start tracking a whole list of AWBs at once
+  awb check       check one AWB from the command line, no Slack
+  awb sync        write every tracked AWB into the Google Sheet
+  awb stats       clearance times over the last N days
+
+Those four pass everything after them straight through, so
+`awb track --from-sheet --tab 2026.09 --dry-run` works as written.
+
 Opening a terminal starts the bot if it is not running. That covers a
 Windows restart or a sleep, but not a PC that is switched off -- which is
 what the always-on server is for.
@@ -333,6 +354,10 @@ case "${1:-status}" in
     logs)     cmd_logs ;;
     autostart) cmd_autostart ;;
     doctor)   shift; cmd_doctor "$@" ;;
+    track)    shift; cmd_track "$@" ;;
+    check)    shift; cmd_check "$@" ;;
+    sync)     shift; cmd_sync "$@" ;;
+    stats)    shift; cmd_stats "$@" ;;
     install)  shift; cmd_install "$@" ;;
     -h|--help|help) usage ;;
     *)        die "unknown command: $1 (try: awb help)" ;;

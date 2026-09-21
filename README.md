@@ -213,10 +213,14 @@ carrying forty a month leaves most rows with nothing behind them. This reads
 the list the operation already maintains:
 
 ```bash
-lej-cc-track --from-sheet <report id> --tab 2026.09 --dry-run   # look first
-lej-cc-track --from-sheet <report id> --tab 2026.09 --yes
-lej-cc-track --from-file month.csv --limit 10                   # or from a file
+awb track --from-sheet --tab 2026.09 --dry-run   # look first
+awb track --from-sheet --tab 2026.09 --yes
+awb track --from-file month.csv --limit 10       # or from a file
 ```
+
+`awb track` is the same as `.venv/bin/lej-cc-track`. The venv is not on
+PATH -- putting it there would shadow the system python in every shell -- so
+`awb` reaches the tools instead: `track`, `check`, `sync`, `stats`, `doctor`.
 
 It finds the AWB column by its header rather than by position, skips the
 ones already being tracked, and names the ones that look like typos instead
