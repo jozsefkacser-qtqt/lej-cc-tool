@@ -210,3 +210,44 @@ def test_the_repeated_header_is_the_header_and_not_a_blank_line(tmp_path):
     ws = sheet_of(build_inspection_list(snap(held=60), tmp_path))
     head = int(ws.print_title_rows.split(":")[0].lstrip("$"))
     assert [c.value for c in ws[head]][0] == "Box"
+
+
+# --- the lookup file as it actually arrives -----------------------------
+
+
+def test_a_hungarian_parcel_list_is_read_without_renaming_anything(tmp_path):
+    """QT PARCEL LIST - LEJ is headed in Hungarian; it must work as-is."""
+    from lej_cc.picklist import load_lookup
+
+    path = tmp_path / "parcels.csv"
+    path.write_text(
+        "Csomagszám,Címzett neve,AWB,Karton szám,VÁM Státusz,DEPO,Customer\n"
+        "BG-2509165GJ12EV0HU,Ágnes Suszter-Dorogi,235-94755205,HUIS250917587595,"
+        "Áruvizsgálatra vár,Express,Radiance Sea Hong Kong Limited\n",
+        encoding="utf-8",
+    )
+    table = load_lookup(path)
+
+    assert table["BG-2509165GJ12EV0HU"]["box"] == "HUIS250917587595"
+    assert table["BG-2509165GJ12EV0HU"]["customer"] == "Ágnes Suszter-Dorogi"
+
+
+def test_the_consignee_wins_over_the_trading_company(tmp_path):
+    """A client name repeated down every row does not identify a parcel."""
+    from lej_cc.picklist import load_lookup
+
+    path = tmp_path / "both.csv"
+    path.write_text(
+        "Tracking number,Consignee,Customer,Box\n"
+        "TRK1,Ágnes Suszter-Dorogi,Radiance Sea Hong Kong Limited,A-12\n",
+        encoding="utf-8",
+    )
+    assert load_lookup(path)["TRK1"]["customer"] == "Ágnes Suszter-Dorogi"
+
+
+def test_a_plain_customer_column_is_still_used_when_it_is_all_there_is(tmp_path):
+    from lej_cc.picklist import load_lookup
+
+    path = tmp_path / "one.csv"
+    path.write_text("Tracking number,Customer,Box\nTRK1,Acme GmbH,A-12\n", encoding="utf-8")
+    assert load_lookup(path)["TRK1"]["customer"] == "Acme GmbH"

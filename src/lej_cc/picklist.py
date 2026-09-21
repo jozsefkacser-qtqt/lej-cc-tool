@@ -50,10 +50,49 @@ GRID = Border(*[Side(style="thin", color="B8C2CC")] * 4)
 #: Alternating bands per box, so a row cannot be read off the wrong line.
 BAND = PatternFill("solid", fgColor="EFF3F7")
 
-#: Where a lookup file's columns may be called from, lowercased.
-KEY_ALIASES = ("tracking number", "hawb", "hawb / tracking number", "tracking", "barcode")
-BOX_ALIASES = ("box", "box id", "box number", "container", "position", "location", "shelf")
-CUSTOMER_ALIASES = ("customer", "consignee", "name", "receiver", "recipient")
+#: Where a lookup file's columns may be called, lowercased. Hungarian is
+#: here because the list that actually holds the box numbers -- QT PARCEL
+#: LIST - LEJ, and whatever Dragon exports -- is headed in Hungarian, and
+#: nobody should have to rename columns before a file is usable.
+KEY_ALIASES = (
+    "tracking number",
+    "hawb",
+    "hawb / tracking number",
+    "tracking",
+    "barcode",
+    "csomagszám",
+    "csomagszam",
+    "parcel number",
+)
+BOX_ALIASES = (
+    "box",
+    "box id",
+    "box number",
+    "karton szám",
+    "karton szam",
+    "karton",
+    "carton number",
+    "carton",
+    "container",
+    "position",
+    "location",
+    "shelf",
+)
+#: Consignee first, deliberately. A file may carry both the name on the
+#: parcel and the trading company that shipped it; the picker is matching a
+#: label on a shelf, and a client name repeated down every row tells them
+#: nothing about which parcel is which.
+CUSTOMER_ALIASES = (
+    "címzett neve",
+    "cimzett neve",
+    "címzett",
+    "name of consignee",
+    "consignee",
+    "receiver",
+    "recipient",
+    "customer",
+    "name",
+)
 
 
 def _pick(row: dict[str, str], aliases: tuple[str, ...]) -> str:
