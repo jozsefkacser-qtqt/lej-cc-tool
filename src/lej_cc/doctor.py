@@ -28,6 +28,9 @@ OK, FAIL, WARN = "  ok  ", " FAIL ", " warn "
 #: of these is safe but wrong: the reports pull from the central sheet.
 HAND_MAINTAINED = re.compile(r"daily\s*report|weekly\s*report", re.I)
 
+#: A month tab, as the reports name them: 2026.09.
+MONTH_TAB = re.compile(r"\d{4}[.\-_]\d{2}")
+
 
 @dataclass
 class Result:
@@ -175,6 +178,73 @@ CHANNEL_ERRORS = {
         "the app's App Manifest page, save, then Install App -> Reinstall."
     ),
 }
+
+
+def check_track(settings) -> Result:  # noqa: ANN001
+    """Can `awb track` run, before the morning somebody needs it to?
+
+    Three separate things have to hold, and each of them failed on its own
+    in practice: a channel to post the cards into, the Google client
+    installed, and the report actually readable. Discovering any of them at
+    the moment you want to start a month of AWBs is the wrong time, and none
+    of the existing checks covered them -- the sheet check looks at the tab
+    the bot writes, which is a different file with different sharing.
+    """
+    from .sheets import describe_spreadsheet
+
+    notes: list[str] = []
+    warnings: list[str] = []
+
+    channel = settings.status_channel
+    if channel:
+        notes.append(f"posts to {channel}")
+    else:
+        watched = settings.autodetect_channel_ids
+        hint = f"; AUTODETECT_CHANNELS names {watched[0]}" if len(watched) == 1 else ""
+        warnings.append(f"no channel — set SLACK_STATUS_CHANNEL{hint}")
+
+    if not settings.report_sheet_id:
+        notes.append("no REPORT_SHEET_ID (use --from-file, or set it)")
+    elif settings.google_credentials_file is None:
+        return Result("track", FAIL, "REPORT_SHEET_ID is set but GOOGLE_CREDENTIALS_FILE is not")
+    else:
+        try:
+            title, tabs = describe_spreadsheet(settings, settings.report_sheet_id)
+        except ImportError:
+            return Result(
+                "track",
+                FAIL,
+                "the Google client libraries are not installed. In the repo, run: "
+                "\".venv/bin/pip install -e '.[google]'\"",
+            )
+        except Exception as exc:  # noqa: BLE001 - auth, network, permissions
+            detail = str(exc)
+            if "404" in detail or "not found" in detail.lower():
+                detail = (
+                    "report not found. Either REPORT_SHEET_ID is wrong, or it has "
+                    "not been shared with the service account (Reader is enough)."
+                )
+            return Result("track", FAIL, detail)
+
+        latest = _latest_month_tab(tabs)
+        where = f"reads {title!r} ({len(tabs)} tabs)"
+        if latest:
+            where += f", latest --tab {latest}"
+        notes.append(where)
+
+    if warnings:
+        return Result("track", WARN, "; ".join(warnings + notes))
+    return Result("track", OK, "; ".join(notes))
+
+
+def _latest_month_tab(tabs: set[str]) -> str | None:
+    """The highest YYYY.MM tab, which is the one `--tab` usually wants.
+
+    Zero-padded month names sort chronologically as strings, which is the
+    whole reason the report names them that way.
+    """
+    months = sorted(tab for tab in tabs if MONTH_TAB.fullmatch(tab))
+    return months[-1] if months else None
 
 
 def check_autodetect(settings) -> Result:  # noqa: ANN001
@@ -398,6 +468,7 @@ def run(mawb: str = SAMPLE_MAWB, *, offline: bool = False) -> list[Result]:
     results.append(check_slack(settings))
     results.append(check_email(settings))
     results.append(check_sheet(settings))
+    results.append(check_track(settings))
     results.append(check_autodetect(settings))
     results.append(check_inbox(settings))
     results.append(check_portground(settings, mawb))

@@ -293,3 +293,107 @@ def test_a_missing_google_client_says_how_to_install_it(tmp_path, monkeypatch):
     # an unactivated shell lands in the system Python and changes nothing.
     assert ".venv/bin/pip install -e '.[google]'" in result.detail
     assert "No module named" not in result.detail
+
+
+# --- awb track ------------------------------------------------------------
+
+
+def test_track_is_ok_with_a_channel_and_no_report(tmp_path):
+    settings = _sheet_settings(tmp_path, slack_status_channel="C0C05GFT40H")
+    result = doctor.check_track(settings)
+
+    assert result.status is doctor.OK
+    assert "C0C05GFT40H" in result.detail
+    assert "--from-file" in result.detail
+
+
+def test_a_missing_channel_warns_and_names_the_watched_one(tmp_path):
+    """The exact stumble this check exists to prevent."""
+    settings = _sheet_settings(tmp_path, autodetect_channels="C0C05GFT40H")
+    result = doctor.check_track(settings)
+
+    assert result.status is doctor.WARN
+    assert not result.failed  # track still runs with --channel
+    assert "SLACK_STATUS_CHANNEL" in result.detail
+    assert "C0C05GFT40H" in result.detail
+
+
+def test_with_several_watched_channels_none_is_named(tmp_path):
+    settings = _sheet_settings(tmp_path, autodetect_channels="C1,C2")
+    assert "names" not in doctor.check_track(settings).detail
+
+
+def test_a_report_id_without_credentials_fails(tmp_path):
+    settings = _sheet_settings(
+        tmp_path, slack_status_channel="C1", report_sheet_id="report-abc"
+    )
+    result = doctor.check_track(settings)
+
+    assert result.failed
+    assert "GOOGLE_CREDENTIALS_FILE" in result.detail
+
+
+def test_an_unreadable_report_says_wrong_id_or_not_shared(tmp_path, monkeypatch):
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path,
+        slack_status_channel="C1",
+        report_sheet_id="report-abc",
+        google_credentials_file=key,
+    )
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("<HttpError 404 when requesting ...>")
+
+    monkeypatch.setattr("lej_cc.sheets.describe_spreadsheet", boom)
+    result = doctor.check_track(settings)
+
+    assert result.failed
+    assert "Reader is enough" in result.detail
+
+
+def test_a_readable_report_names_the_tab_to_pass(tmp_path, monkeypatch):
+    """Knowing the tab exists is most of what --tab gets wrong."""
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path,
+        slack_status_channel="C1",
+        report_sheet_id="report-abc",
+        google_credentials_file=key,
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.describe_spreadsheet",
+        lambda *a, **k: ("Daily Report_LEJ", {"2026.08", "2026.09", "TEMPLATE", "SLAs"}),
+    )
+    result = doctor.check_track(settings)
+
+    assert result.status is doctor.OK
+    assert "Daily Report_LEJ" in result.detail
+    assert "--tab 2026.09" in result.detail
+
+
+def test_a_missing_google_client_is_reported_here_too(tmp_path, monkeypatch):
+    key = tmp_path / "sa.json"
+    key.write_text("{}")
+    settings = _sheet_settings(
+        tmp_path,
+        slack_status_channel="C1",
+        report_sheet_id="report-abc",
+        google_credentials_file=key,
+    )
+
+    def missing(*_args, **_kwargs):
+        raise ModuleNotFoundError("No module named 'google'")
+
+    monkeypatch.setattr("lej_cc.sheets.describe_spreadsheet", missing)
+    result = doctor.check_track(settings)
+
+    assert result.failed
+    assert ".venv/bin/pip install -e '.[google]'" in result.detail
+
+
+def test_the_latest_month_tab_is_chosen_chronologically():
+    assert doctor._latest_month_tab({"2026.09", "2026.12", "2027.01"}) == "2027.01"
+    assert doctor._latest_month_tab({"TEMPLATE", "SLAs"}) is None

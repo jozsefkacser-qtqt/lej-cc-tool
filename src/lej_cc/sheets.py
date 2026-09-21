@@ -219,6 +219,24 @@ def build_service(settings) -> Any:  # noqa: ANN001 - avoids a circular import
     return build("sheets", "v4", credentials=credentials).spreadsheets()
 
 
+def describe_spreadsheet(
+    settings,  # noqa: ANN001 - avoids a circular import
+    spreadsheet_id: str,
+    service: Any | None = None,
+) -> tuple[str, set[str]]:
+    """A spreadsheet's title and its tab names. Raises on failure.
+
+    Preflight needs to say *which* file it reached -- "not found" and "not
+    shared with the service account" are the same error from the API and
+    different fixes -- and it asks this of the report as well as of the tab
+    the bot owns.
+    """
+    meta = (service or build_service(settings)).get(spreadsheetId=spreadsheet_id).execute()
+    title = meta.get("properties", {}).get("title", "(untitled)")
+    tabs = {sheet["properties"]["title"] for sheet in meta.get("sheets", [])}
+    return title, tabs
+
+
 class SheetExporter:
     """Upserts rows into one tab. Never raises into the polling cycle."""
 
@@ -241,15 +259,8 @@ class SheetExporter:
         return self._service
 
     def describe(self) -> tuple[str, set[str]]:
-        """The spreadsheet's title and its tab names. Raises on failure.
-
-        Preflight needs to say *which* sheet the bot is pointed at, and the
-        Google plumbing stays here rather than leaking into the checks.
-        """
-        meta = self._connect().get(spreadsheetId=self.settings.google_sheet_id).execute()
-        title = meta.get("properties", {}).get("title", "(untitled)")
-        tabs = {s["properties"]["title"] for s in meta.get("sheets", [])}
-        return title, tabs
+        """The spreadsheet's title and its tab names. Raises on failure."""
+        return describe_spreadsheet(self.settings, self.settings.google_sheet_id, self._connect())
 
     def _ensure_tab(self, service: Any) -> None:
         """Create the tab and its header row the first time."""
