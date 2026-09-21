@@ -222,10 +222,14 @@ awb track --from-file month.csv --limit 10       # or from a file
 PATH -- putting it there would shadow the system python in every shell -- so
 `awb` reaches the tools instead: `track`, `check`, `sync`, `stats`, `doctor`.
 
-It finds the AWB column by its header rather than by position, skips the
-ones already being tracked, and names the ones that look like typos instead
-of silently dropping them -- an 11-digit number failing its check digit is
-somebody's mistake, a legend row is not.
+It finds the AWB column by its header rather than by position, and sorts the
+rest by what the tracker already knows. An AWB **still being tracked** or one
+that **already completed** is left alone -- re-downloading a finished AWB
+costs a hundred seconds and re-posts a card that is already in Slack. One
+that was tracked but stopped short (timeout, stopped, failed, not_found) is
+counted separately and restarted only with `--retry`. Values that look like
+typos are named rather than silently dropped: an 11-digit number failing its
+check digit is somebody's mistake, a legend row is not.
 
 **Starts are staggered**, two minutes apart by default. Each AWB triggers an
 export PortGround builds on demand, and the scheduler claims twenty jobs at

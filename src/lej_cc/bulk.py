@@ -26,6 +26,7 @@ import argparse
 import csv
 import logging
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -106,12 +107,26 @@ def read_from_sheet(settings: Settings, spreadsheet_id: str, tab: str) -> list[s
 # --- deciding what to do with it ----------------------------------------
 
 
+#: Tracked and finished, with nothing left to learn. Never restarted: the
+#: export is slow and the card has already been posted.
+SETTLED = ("complete",)
+#: Tracked and stopped without finishing. Worth another go, but only when
+#: asked -- an AWB that timed out at 99.9% may since have cleared, and one
+#: PortGround has never heard of never will.
+UNFINISHED = ("timeout", "stopped", "failed", "not_found")
+
+
 @dataclass
 class Plan:
     """What a run would do, before it does any of it."""
 
     to_start: list[str] = field(default_factory=list)
-    already: list[str] = field(default_factory=list)
+    #: Being tracked right now.
+    active: list[str] = field(default_factory=list)
+    #: Tracked and completed. Starting these again buys nothing.
+    settled: list[str] = field(default_factory=list)
+    #: Tracked, but stopped short. `--retry` moves these into to_start.
+    unfinished: list[tuple[str, str]] = field(default_factory=list)
     #: AWB-shaped but rejected -- an 11-digit number failing its check digit
     #: is a typo worth naming, not a header to skip past.
     typos: list[tuple[str, str]] = field(default_factory=list)
@@ -119,8 +134,18 @@ class Plan:
     ignored: int = 0
 
     @property
+    def already(self) -> list[str]:
+        return self.active + self.settled
+
+    @property
     def total(self) -> int:
-        return len(self.to_start) + len(self.already) + len(self.typos) + self.ignored
+        return (
+            len(self.to_start)
+            + len(self.already)
+            + len(self.unfinished)
+            + len(self.typos)
+            + self.ignored
+        )
 
 
 def _looks_like_an_attempt(raw: str) -> bool:
@@ -132,9 +157,27 @@ def _looks_like_an_attempt(raw: str) -> bool:
     return sum(character.isdigit() for character in raw) >= 8
 
 
-def plan_starts(raw_values: list[str], store: JobStore, channel: str) -> Plan:
-    """Sort a column of cells into start / already tracked / typo / ignore."""
+def known_states(store: JobStore, channel: str) -> dict[str, str]:
+    """The most recent state this channel has seen for each AWB.
+
+    `find_active` was the wrong question. It matches only jobs still running,
+    so an AWB tracked to completion last week reads as one nobody has ever
+    checked -- and a whole month of finished AWBs would be downloaded again,
+    at a hundred seconds each, to re-post cards that are already in Slack.
+    """
+    latest: dict[str, str] = {}
+    for job in store.list_all_jobs():  # ordered by id, so the last write wins
+        if job.channel_id == channel:
+            latest[job.mawb] = job.state
+    return latest
+
+
+def plan_starts(
+    raw_values: list[str], store: JobStore, channel: str, *, retry: bool = False
+) -> Plan:
+    """Sort a column of cells by what the tracker already knows about each."""
     plan = Plan()
+    states = known_states(store, channel)
     seen: set[str] = set()
 
     for raw in raw_values:
@@ -152,8 +195,15 @@ def plan_starts(raw_values: list[str], store: JobStore, channel: str) -> Plan:
             continue
         seen.add(mawb)
 
-        if store.find_active(mawb, channel):
-            plan.already.append(mawb)
+        state = states.get(mawb)
+        if state == "active":
+            plan.active.append(mawb)
+        elif state in SETTLED:
+            plan.settled.append(mawb)
+        elif state in UNFINISHED:
+            plan.unfinished.append((mawb, state))
+            if retry:
+                plan.to_start.append(mawb)
         else:
             plan.to_start.append(mawb)
 
@@ -186,10 +236,18 @@ def start_tracking(
 # --- the command --------------------------------------------------------
 
 
-def _report(plan: Plan, stagger: int) -> None:
+def _report(plan: Plan, stagger: int, *, retry: bool) -> None:
     print(f"{plan.total} cell(s) read\n")
     print(f"  {len(plan.to_start):>4} to start")
-    print(f"  {len(plan.already):>4} already tracked")
+    if plan.active:
+        print(f"  {len(plan.active):>4} being tracked now")
+    if plan.settled:
+        print(f"  {len(plan.settled):>4} already completed")
+    if plan.unfinished:
+        counts = Counter(state for _, state in plan.unfinished)
+        breakdown = ", ".join(f"{n} {state}" for state, n in sorted(counts.items()))
+        suffix = " — restarting (--retry)" if retry else " — pass --retry to try again"
+        print(f"  {len(plan.unfinished):>4} tracked before, unfinished ({breakdown}){suffix}")
     if plan.typos:
         print(f"  {len(plan.typos):>4} look like typos")
     print(f"  {plan.ignored:>4} not AWBs (headers, blanks, duplicates)")
@@ -251,6 +309,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="show the plan, start nothing")
     parser.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     parser.add_argument("--limit", type=int, help="start at most this many")
+    parser.add_argument(
+        "--retry",
+        action="store_true",
+        help="also restart AWBs tracked before that never finished "
+             "(timeout, stopped, failed, not_found); completed ones are never restarted",
+    )
     parser.add_argument(
         "--stagger-minutes",
         type=int,
@@ -318,11 +382,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Read {len(raw_values)} value(s) from {where}\n")
 
     store = JobStore(settings.database_path)
-    plan = plan_starts(raw_values, store, channel)
+    plan = plan_starts(raw_values, store, channel, retry=args.retry)
     if args.limit is not None:
         plan.to_start = plan.to_start[: args.limit]
 
-    _report(plan, args.stagger_minutes)
+    _report(plan, args.stagger_minutes, retry=args.retry)
 
     if args.dry_run:
         print("\n(dry run — nothing was started)")

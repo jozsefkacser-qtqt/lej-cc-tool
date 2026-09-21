@@ -113,12 +113,88 @@ def test_a_real_month_tab_is_sorted_correctly(store):
     assert plan.ignored == 2  # "Legend" and "AWB"
 
 
-def test_an_awb_already_tracked_here_is_not_started_again(store):
+def test_an_awb_being_tracked_right_now_is_not_started_again(store):
     store.create_job("48820744846", CHANNEL, "U1")
     plan = plan_starts(["488-20744846", "936-02927993"], store, CHANNEL)
 
     assert plan.to_start == ["93602927993"]
-    assert plan.already == ["48820744846"]
+    assert plan.active == ["48820744846"]
+
+
+def test_an_awb_that_already_completed_is_never_started_again(store):
+    """The whole point: a finished AWB has nothing left to learn, and
+    re-downloading it costs a hundred seconds and a duplicate card."""
+    job = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(job.id, "complete", "100% cleared")
+
+    plan = plan_starts(["488-20744846"], store, CHANNEL)
+
+    assert plan.to_start == []
+    assert plan.settled == ["48820744846"]
+
+
+def test_a_completed_awb_is_not_started_even_with_retry(store):
+    job = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(job.id, "complete", "100% cleared")
+
+    assert plan_starts(["488-20744846"], store, CHANNEL, retry=True).to_start == []
+
+
+@pytest.mark.parametrize("state", ["timeout", "stopped", "failed", "not_found"])
+def test_an_unfinished_awb_waits_for_retry(store, state):
+    job = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(job.id, state, "whatever")
+
+    plan = plan_starts(["488-20744846"], store, CHANNEL)
+    assert plan.to_start == []
+    assert plan.unfinished == [("48820744846", state)]
+
+    retried = plan_starts(["488-20744846"], store, CHANNEL, retry=True)
+    assert retried.to_start == ["48820744846"]
+
+
+def test_the_latest_state_wins_when_an_awb_was_tracked_twice(store):
+    """Tracked, timed out, tracked again, completed: it is complete."""
+    first = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(first.id, "timeout", "still 99.9%")
+    second = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(second.id, "complete", "100% cleared")
+
+    plan = plan_starts(["488-20744846"], store, CHANNEL, retry=True)
+    assert plan.to_start == []
+    assert plan.settled == ["48820744846"]
+
+
+def test_another_channels_history_does_not_count(store):
+    job = store.create_job("48820744846", "C-OTHER", "U1")
+    store.finish(job.id, "complete", "100% cleared")
+
+    assert plan_starts(["488-20744846"], store, CHANNEL).to_start == ["48820744846"]
+
+
+def test_the_report_distinguishes_completed_from_unfinished(tmp_path, monkeypatch, capsys):
+    from lej_cc import bulk
+
+    db = tmp_path / "j.sqlite3"
+    store = JobStore(db)
+    done = store.create_job("93602927993", CHANNEL, "U1")
+    store.finish(done.id, "complete", "100% cleared")
+    stuck = store.create_job("48820744846", CHANNEL, "U1")
+    store.finish(stuck.id, "timeout", "still 99.9%")
+
+    path = csv_file(tmp_path, MONTH_TAB)
+    monkeypatch.setattr(
+        bulk, "Settings", lambda: Settings(
+            slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+            database_path=db, slack_ops_channel=CHANNEL,
+        )
+    )
+    bulk.main(["--from-file", str(path), "--dry-run"])
+    out = capsys.readouterr().out
+
+    assert "1 already completed" in out
+    assert "1 tracked before, unfinished (1 timeout)" in out
+    assert "pass --retry" in out
 
 
 def test_the_same_awb_twice_on_one_sheet_starts_once(store):
