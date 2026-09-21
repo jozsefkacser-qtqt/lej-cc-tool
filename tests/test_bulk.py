@@ -201,6 +201,40 @@ def test_without_a_channel_it_refuses(tmp_path, monkeypatch, capsys):
     assert "SLACK_STATUS_CHANNEL" in capsys.readouterr().err
 
 
+def test_one_watched_channel_is_suggested_not_silently_used(tmp_path, monkeypatch, capsys):
+    """Naming it makes the fix obvious; using it would post a month of cards
+    into a channel nobody chose."""
+    from lej_cc import bulk
+
+    path = csv_file(tmp_path, MONTH_TAB)
+    db = tmp_path / "j.sqlite3"
+    monkeypatch.setattr(
+        bulk, "Settings", lambda: Settings(
+            slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+            database_path=db, autodetect_channels="C0C05GFT40H",
+        )
+    )
+    assert bulk.main(["--from-file", str(path), "--yes"]) == 2
+
+    err = capsys.readouterr().err
+    assert "C0C05GFT40H" in err
+    assert "SLACK_STATUS_CHANNEL=C0C05GFT40H" in err
+    assert JobStore(db).list_all_jobs() == []
+
+
+def test_several_watched_channels_are_not_guessed_between(tmp_path, monkeypatch, capsys):
+    from lej_cc import bulk
+
+    monkeypatch.setattr(
+        bulk, "Settings", lambda: Settings(
+            slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+            database_path=tmp_path / "j.sqlite3", autodetect_channels="C1,C2",
+        )
+    )
+    assert bulk.main(["--from-file", "x.csv", "--dry-run"]) == 2
+    assert "probably the one you want" not in capsys.readouterr().err
+
+
 def test_unattended_without_yes_refuses_rather_than_hanging(tmp_path, monkeypatch, capsys):
     """A cron job must not block on input(), and must not start silently."""
     from lej_cc import bulk

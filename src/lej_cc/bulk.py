@@ -265,9 +265,19 @@ def main(argv: list[str] | None = None) -> int:
 
     channel = args.channel or settings.status_channel
     if not channel:
+        # Deliberately a suggestion, not a fallback. Picking the auto-detect
+        # channel silently would post a month of cards somewhere nobody
+        # chose; naming it costs one line and makes the fix obvious.
+        watched = settings.autodetect_channel_ids
+        hint = (
+            f"\nAUTODETECT_CHANNELS names {watched[0]} — probably the one you want:"
+            f"\n  echo 'SLACK_STATUS_CHANNEL={watched[0]}' >> .env"
+            if len(watched) == 1
+            else ""
+        )
         print(
             "No channel to post to. Pass --channel, or set SLACK_STATUS_CHANNEL "
-            "or SLACK_OPS_CHANNEL in .env.",
+            f"or SLACK_OPS_CHANNEL in .env.{hint}",
             file=sys.stderr,
         )
         return 2
