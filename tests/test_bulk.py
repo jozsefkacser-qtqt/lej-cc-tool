@@ -394,3 +394,116 @@ def test_a_small_batch_does_not_lecture(tmp_path, monkeypatch, capsys):
     )
     bulk.main(["--from-file", str(path), "--dry-run"])
     assert "exports an hour" not in capsys.readouterr().out
+
+
+# --- which tabs, as the months turn -------------------------------------
+
+TABS = {"2026.07", "2026.08", "2026.09", "TEMPLATE", "SLAs", "CC_BOT_IMPORT"}
+
+
+def test_the_newest_month_tab_is_picked_without_anybody_typing_it():
+    from lej_cc.bulk import month_tabs
+
+    assert month_tabs(TABS, 1) == ["2026.09"]
+
+
+def test_two_months_covers_the_boundary_oldest_first():
+    """On 1 October, September's AWBs are still clearing."""
+    from lej_cc.bulk import month_tabs
+
+    assert month_tabs(TABS, 2) == ["2026.08", "2026.09"]
+
+
+def test_a_year_boundary_sorts_correctly():
+    from lej_cc.bulk import month_tabs
+
+    assert month_tabs({"2026.11", "2026.12", "2027.01"}, 2) == ["2026.12", "2027.01"]
+
+
+def test_non_month_tabs_are_never_read():
+    """TEMPLATE and SLAs hold no AWBs and must not be swept up."""
+    from lej_cc.bulk import month_tabs
+
+    assert "TEMPLATE" not in month_tabs(TABS, 99)
+    assert "CC_BOT_IMPORT" not in month_tabs(TABS, 99)
+
+
+def test_named_tabs_are_used_verbatim_without_asking_the_api(tmp_path):
+    from lej_cc.bulk import resolve_tabs
+
+    settings = Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3",
+    )
+    assert resolve_tabs(settings, "id", ["2026.09", "2026.08"], None) == ["2026.09", "2026.08"]
+
+
+def test_months_resolves_against_the_real_file(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3",
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.describe_spreadsheet", lambda *a, **k: ("Daily Report_LEJ", TABS)
+    )
+    assert bulk.resolve_tabs(settings, "id", [], 2) == ["2026.08", "2026.09"]
+
+
+def test_a_file_with_no_month_tabs_says_what_it_does_have(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3",
+    )
+    monkeypatch.setattr(
+        "lej_cc.sheets.describe_spreadsheet", lambda *a, **k: ("Something", {"Sheet1", "Notes"})
+    )
+    with pytest.raises(LookupError, match="Sheet1"):
+        bulk.resolve_tabs(settings, "id", [], 1)
+
+
+def test_comma_separated_tabs_are_split(tmp_path, monkeypatch, capsys):
+    from lej_cc import bulk
+
+    seen: dict = {}
+    monkeypatch.setattr(
+        bulk, "Settings", lambda: Settings(
+            slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+            database_path=tmp_path / "j.sqlite3", slack_ops_channel=CHANNEL,
+            report_sheet_id="report-abc",
+        )
+    )
+    monkeypatch.setattr(
+        bulk, "read_from_sheet", lambda s, i, tabs: seen.setdefault("tabs", tabs) and []
+    )
+    bulk.main(["--from-sheet", "--tab", "2026.08,2026.09", "--dry-run"])
+
+    assert seen["tabs"] == ["2026.08", "2026.09"]
+
+
+def test_neither_tab_nor_months_is_refused_with_both_ways_out(tmp_path, monkeypatch, capsys):
+    from lej_cc import bulk
+
+    monkeypatch.setattr(
+        bulk, "Settings", lambda: Settings(
+            slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+            database_path=tmp_path / "j.sqlite3", slack_ops_channel=CHANNEL,
+            report_sheet_id="report-abc",
+        )
+    )
+    assert bulk.main(["--from-sheet", "--dry-run"]) == 2
+
+    err = capsys.readouterr().err
+    assert "--tab 2026.09" in err
+    assert "--months 2" in err
+
+
+def test_the_same_awb_in_two_months_starts_once(store):
+    """Overlapping tabs must not double-start a straggler."""
+    plan = plan_starts(["488-20744846", "936-02927993", "488-20744846"], store, CHANNEL)
+
+    assert plan.to_start == ["48820744846", "93602927993"]
+    assert plan.ignored == 1

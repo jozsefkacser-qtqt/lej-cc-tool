@@ -28,8 +28,6 @@ OK, FAIL, WARN = "  ok  ", " FAIL ", " warn "
 #: of these is safe but wrong: the reports pull from the central sheet.
 HAND_MAINTAINED = re.compile(r"daily\s*report|weekly\s*report", re.I)
 
-#: A month tab, as the reports name them: 2026.09.
-MONTH_TAB = re.compile(r"\d{4}[.\-_]\d{2}")
 
 
 @dataclass
@@ -190,6 +188,7 @@ def check_track(settings) -> Result:  # noqa: ANN001
     of the existing checks covered them -- the sheet check looks at the tab
     the bot writes, which is a different file with different sharing.
     """
+    from .bulk import latest_month_tab
     from .sheets import describe_spreadsheet
 
     notes: list[str] = []
@@ -226,7 +225,7 @@ def check_track(settings) -> Result:  # noqa: ANN001
                 )
             return Result("track", FAIL, detail)
 
-        latest = _latest_month_tab(tabs)
+        latest = latest_month_tab(tabs)
         where = f"reads {title!r} ({len(tabs)} tabs)"
         if latest:
             where += f", latest --tab {latest}"
@@ -235,16 +234,6 @@ def check_track(settings) -> Result:  # noqa: ANN001
     if warnings:
         return Result("track", WARN, "; ".join(warnings + notes))
     return Result("track", OK, "; ".join(notes))
-
-
-def _latest_month_tab(tabs: set[str]) -> str | None:
-    """The highest YYYY.MM tab, which is the one `--tab` usually wants.
-
-    Zero-padded month names sort chronologically as strings, which is the
-    whole reason the report names them that way.
-    """
-    months = sorted(tab for tab in tabs if MONTH_TAB.fullmatch(tab))
-    return months[-1] if months else None
 
 
 def check_autodetect(settings) -> Result:  # noqa: ANN001

@@ -213,10 +213,18 @@ carrying forty a month leaves most rows with nothing behind them. This reads
 the list the operation already maintains:
 
 ```bash
-awb track --from-sheet --tab 2026.09 --dry-run   # look first
-awb track --from-sheet --tab 2026.09 --yes
-awb track --from-file month.csv --limit 10       # or from a file
+awb track --from-sheet --months 2 --dry-run      # look first
+awb track --from-sheet --months 2 --yes
+awb track --from-sheet --tab 2026.09             # or name the tab
+awb track --from-file month.csv --limit 10       # or read a file
 ```
+
+`--months N` reads the newest N `YYYY.MM` tabs, so nothing has to be edited
+when the month turns. **Two is the useful default**: on the first of the
+month last month's AWBs are still clearing while this month's arrive, and a
+list covering only the current tab would quietly stop following the
+stragglers on exactly the day nobody would notice. An AWB appearing in both
+tabs is started once.
 
 `awb track` is the same as `.venv/bin/lej-cc-track`. The venv is not on
 PATH -- putting it there would shadow the system python in every shell -- so

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -46,6 +47,11 @@ DEFAULT_STAGGER = 2
 
 #: Above this many, the preview says what the ongoing polling will cost.
 BUSY_THRESHOLD = 20
+
+#: A month tab, as the reports name them: 2026.09. Zero-padded, so sorting
+#: them as strings sorts them chronologically -- which is the whole reason
+#: the report names them that way, and what makes "the newest two" cheap.
+MONTH_TAB = re.compile(r"\d{4}[.\-_]\d{2}")
 
 
 # --- reading the list ---------------------------------------------------
@@ -90,18 +96,59 @@ def read_from_file(path: Path) -> list[str]:
     return _column(rows)
 
 
-def read_from_sheet(settings: Settings, spreadsheet_id: str, tab: str) -> list[str]:
-    """Every value in the AWB column of one tab. Read-only."""
+def month_tabs(tabs: set[str], count: int) -> list[str]:
+    """The newest `count` month tabs, oldest first.
+
+    Around a month boundary one tab is not enough: September's AWBs are
+    still clearing while October's are arriving, and a list that covers only
+    the current month silently stops tracking last month's stragglers on the
+    first of the month -- exactly when somebody is least likely to notice.
+    """
+    months = sorted(tab for tab in tabs if MONTH_TAB.fullmatch(tab))
+    return months[-count:] if count else months
+
+
+def latest_month_tab(tabs: set[str]) -> str | None:
+    """The highest month tab, which is what `--tab` usually wants."""
+    newest = month_tabs(tabs, 1)
+    return newest[0] if newest else None
+
+
+def resolve_tabs(
+    settings: Settings, spreadsheet_id: str, named: list[str], months: int | None
+) -> list[str]:
+    """Turn `--tab` / `--months` into actual tab names present in the file."""
+    if months is None:
+        return named
+    from .sheets import describe_spreadsheet
+
+    _title, tabs = describe_spreadsheet(settings, spreadsheet_id)
+    found = month_tabs(tabs, months)
+    if not found:
+        raise LookupError(
+            f"no month tabs (YYYY.MM) in that spreadsheet — it has: "
+            f"{', '.join(sorted(tabs)[:8])}"
+        )
+    return found
+
+
+def read_from_sheet(
+    settings: Settings, spreadsheet_id: str, tabs: list[str]
+) -> list[str]:
+    """Every value in the AWB column of each tab, in one call. Read-only."""
     from .sheets import build_service
 
     service = build_service(settings)
-    values = (
+    response = (
         service.values()
-        .get(spreadsheetId=spreadsheet_id, range=tab)
+        .batchGet(spreadsheetId=spreadsheet_id, ranges=tabs)
         .execute()
-        .get("values", [])
     )
-    return _column([[str(c) for c in row] for row in values])
+    values: list[str] = []
+    for block in response.get("valueRanges", []):
+        rows = [[str(cell) for cell in row] for row in block.get("values", [])]
+        values.extend(_column(rows))
+    return values
 
 
 # --- deciding what to do with it ----------------------------------------
@@ -302,7 +349,21 @@ def main(argv: list[str] | None = None) -> int:
         const="",
         help="a Google Sheet id; omit the value to use REPORT_SHEET_ID from .env",
     )
-    parser.add_argument("--tab", help="which tab to read, e.g. 2026.09 (Google Sheet only)")
+    parser.add_argument(
+        "--tab",
+        action="append",
+        metavar="NAME",
+        help="which tab to read, e.g. 2026.09. Repeat it, or comma-separate, "
+             "to read several (Google Sheet only)",
+    )
+    parser.add_argument(
+        "--months",
+        type=int,
+        metavar="N",
+        help="read the newest N month tabs (YYYY.MM) instead of naming them. "
+             "--months 2 covers a month boundary, where last month's AWBs are "
+             "still clearing while this month's arrive",
+    )
     parser.add_argument(
         "--channel", help="Slack channel to post to; defaults to the status channel"
     )
@@ -363,17 +424,26 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            if not args.tab:
-                print("--tab is required with --from-sheet, e.g. --tab 2026.09", file=sys.stderr)
+            if not args.tab and args.months is None:
+                print(
+                    "With --from-sheet, say which tabs: --tab 2026.09, or "
+                    "--months 2 for the newest two month tabs.",
+                    file=sys.stderr,
+                )
                 return 2
-            raw_values = read_from_sheet(settings, spreadsheet_id, args.tab)
-            where = f"{spreadsheet_id} tab {args.tab!r}"
+            named = [t.strip() for arg in (args.tab or []) for t in arg.split(",") if t.strip()]
+            tabs = resolve_tabs(settings, spreadsheet_id, named, args.months)
+            raw_values = read_from_sheet(settings, spreadsheet_id, tabs)
+            where = f"{spreadsheet_id} tab(s) {', '.join(tabs)}"
     except ImportError:
         print(
             "The Google client libraries are not installed. In the repo, run: "
             "\".venv/bin/pip install -e '.[google]'\"",
             file=sys.stderr,
         )
+        return 2
+    except LookupError as exc:
+        print(exc, file=sys.stderr)
         return 2
     except Exception as exc:  # noqa: BLE001 - a bad id, no access, a missing tab
         print(f"Could not read the list: {exc}", file=sys.stderr)

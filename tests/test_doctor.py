@@ -395,5 +395,7 @@ def test_a_missing_google_client_is_reported_here_too(tmp_path, monkeypatch):
 
 
 def test_the_latest_month_tab_is_chosen_chronologically():
-    assert doctor._latest_month_tab({"2026.09", "2026.12", "2027.01"}) == "2027.01"
-    assert doctor._latest_month_tab({"TEMPLATE", "SLAs"}) is None
+    from lej_cc.bulk import latest_month_tab
+
+    assert latest_month_tab({"2026.09", "2026.12", "2027.01"}) == "2027.01"
+    assert latest_month_tab({"TEMPLATE", "SLAs"}) is None
