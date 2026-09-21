@@ -133,3 +133,83 @@ def test_nudge_returns_immediately(tmp_path):
     while not tracker.seen and time.monotonic() < deadline:
         time.sleep(0.05)
     assert tracker.seen == ["48820744846"], "nudge never ran the poll"
+
+
+# --- the daily import ----------------------------------------------------
+
+
+class FakeTracker:
+    """Just enough of a Tracker for daily_track: settings and a notifier."""
+
+    def __init__(self, settings):
+        self.settings = settings
+        self.posts: list[tuple[str, str]] = []
+        self.notifier = self
+
+    def post(self, channel, *, text, **_kwargs):
+        self.posts.append((channel, text))
+        return "ts"
+
+    def run_once(self, job):  # the nudge fires a tick
+        pass
+
+
+def _settings(tmp_path, **kwargs):
+    from lej_cc.config import Settings
+
+    return Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "jobs.sqlite3", download_dir=tmp_path / "dl",
+        slack_ops_channel="C1", report_sheet_id="report-abc",
+        **{"track_daily_at": "06:00", **kwargs},
+    )
+
+
+def test_the_daily_import_is_announced_in_the_channel(tmp_path, monkeypatch):
+    """Cards appearing at dawn with no explanation read as a malfunction."""
+    from lej_cc import bulk
+    from lej_cc.scheduler import PollScheduler
+    from lej_cc.store import JobStore
+
+    settings = _settings(tmp_path)
+    store = JobStore(settings.database_path)
+    tracker = FakeTracker(settings)
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: ["2026.08", "2026.09"])
+    monkeypatch.setattr(bulk, "read_from_sheet", lambda *a, **k: ["488-20744846"])
+
+    PollScheduler(store, tracker).daily_track()  # type: ignore[arg-type]
+
+    assert len(tracker.posts) == 1
+    channel, text = tracker.posts[0]
+    assert channel == "C1"
+    assert "started 1" in text
+    assert "2026.08, 2026.09" in text
+
+
+def test_a_day_with_nothing_new_says_nothing(tmp_path, monkeypatch):
+    """Silence is correct when there is nothing to report."""
+    from lej_cc import bulk
+    from lej_cc.scheduler import PollScheduler
+    from lej_cc.store import JobStore
+
+    settings = _settings(tmp_path)
+    store = JobStore(settings.database_path)
+    tracker = FakeTracker(settings)
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: ["2026.09"])
+    monkeypatch.setattr(bulk, "read_from_sheet", lambda *a, **k: ["AWB", ""])
+
+    PollScheduler(store, tracker).daily_track()  # type: ignore[arg-type]
+
+    assert tracker.posts == []
+
+
+def test_daily_tracking_off_posts_nothing(tmp_path):
+    from lej_cc.scheduler import PollScheduler
+    from lej_cc.store import JobStore
+
+    settings = _settings(tmp_path, track_daily_at="")
+    tracker = FakeTracker(settings)
+
+    PollScheduler(JobStore(settings.database_path), tracker).daily_track()  # type: ignore[arg-type]
+
+    assert tracker.posts == []

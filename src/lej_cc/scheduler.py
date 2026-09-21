@@ -109,8 +109,16 @@ class PollScheduler:
         from .bulk import scheduled_import
 
         summary = scheduled_import(self.tracker.settings, self.store)
-        if summary:
-            self.nudge()  # do not wait a full tick to poll what was just started
+        if not summary:
+            return
+        # Say it in the channel too. Twenty-five cards appearing at dawn with
+        # nothing to explain them reads as the bot having gone wrong; one line
+        # saying where they came from is the difference between a routine and
+        # a mystery.
+        channel = self.tracker.settings.status_channel
+        if channel:
+            self.tracker.notifier.post(channel, text=f":repeat: {summary}")
+        self.nudge()  # do not wait a full tick to poll what was just started
 
     def housekeeping(self, interval_seconds: int = 3600) -> None:
         """Purge stale downloads, at most once per `interval_seconds`."""
