@@ -158,6 +158,15 @@ class Settings(BaseSettings):
     #: from. Share it with the service account as **Reader**: the bot has no
     #: reason to be able to change it, and read-only means it cannot.
     report_sheet_id: str = ""
+    #: Local time to read that report and start whatever is new, as HH:MM.
+    #: Empty keeps it off. The bot does this itself rather than through cron,
+    #: which under WSL is not running unless somebody remembered to start it.
+    track_daily_at: str = ""
+    #: How many month tabs the daily run covers. Two spans a month boundary,
+    #: where last month's AWBs are still clearing as this month's arrive.
+    track_months: int = 2
+    #: Most to start in one daily run. 0 is no cap.
+    track_daily_limit: int = 0
 
     # --- inbound email: start a check by mailing a shared mailbox ---
     #: Leave imap_host empty to keep the trigger off. It is off by default.

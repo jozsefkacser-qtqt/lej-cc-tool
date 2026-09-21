@@ -29,8 +29,9 @@ import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .awb import format_display, normalize
 from .config import Settings, configure_logging
@@ -41,6 +42,8 @@ log = logging.getLogger(__name__)
 
 #: A header that means "the AWB is in this column", lowercased.
 AWB_HEADERS = ("awb", "mawb", "air waybill", "awb number", "waybill", "légifuvarlevél")
+
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 #: Minutes between one start and the next. See the module docstring.
 DEFAULT_STAGGER = 2
@@ -278,6 +281,75 @@ def start_tracking(
             continue
         started.append(mawb)
     return started
+
+
+# --- the daily run, driven by the bot rather than by cron ----------------
+
+#: The key the last run's local date is kept under, so a restart does not
+#: re-run it and a bot asleep at the appointed hour still catches up.
+LAST_RUN_KEY = "bulk_track_last_run"
+
+
+def due_today(now: datetime, at: str, last_run: str | None) -> bool:
+    """Has the configured local time passed, and has today's run not happened?
+
+    Catch-up is deliberate: a bot that was down at 06:00 and starts at 09:00
+    should still pick up the day's AWBs. Skipping a whole day because the PC
+    was asleep is the failure worth avoiding; a run three hours late is not.
+    """
+    if not at:
+        return False
+    try:
+        hour, minute = (int(part) for part in at.split(":", 1))
+        target = time(hour, minute)
+    except ValueError:
+        log.error("TRACK_DAILY_AT is not HH:MM: %r — daily tracking is off", at)
+        return False
+    if last_run == now.date().isoformat():
+        return False
+    return now.time() >= target
+
+
+def scheduled_import(settings: Settings, store: JobStore) -> str | None:
+    """One daily pass. Returns a line for the log, or None if it did nothing.
+
+    Never raises: this runs inside the polling loop, and a report that is
+    briefly unreachable must not take the bot down with it.
+    """
+    now = datetime.now(LOCAL_TZ)
+    if not due_today(now, settings.track_daily_at, store.get_meta(LAST_RUN_KEY)):
+        return None
+
+    channel = settings.status_channel
+    if not channel or not settings.report_sheet_id:
+        log.warning("daily tracking needs both a status channel and REPORT_SHEET_ID")
+        return None
+
+    # Recorded before the work, not after: a report that fails every time
+    # must not be retried on every tick for the rest of the day.
+    store.set_meta(LAST_RUN_KEY, now.date().isoformat())
+
+    try:
+        tabs = resolve_tabs(settings, settings.report_sheet_id, [], settings.track_months)
+        raw_values = read_from_sheet(settings, settings.report_sheet_id, tabs)
+    except Exception as exc:  # noqa: BLE001 - a report is not worth a crash
+        log.error("daily tracking could not read the report: %s", exc)
+        return None
+
+    plan = plan_starts(raw_values, store, channel)
+    if settings.track_daily_limit:
+        plan.to_start = plan.to_start[: settings.track_daily_limit]
+    if not plan.to_start:
+        log.info("daily tracking: nothing new in %s", ", ".join(tabs))
+        return None
+
+    started = start_tracking(plan, store, channel, source="daily")
+    summary = (
+        f"daily tracking: started {len(started)} from {', '.join(tabs)} "
+        f"({len(plan.active)} already running, {len(plan.settled)} done)"
+    )
+    log.info("%s", summary)
+    return summary
 
 
 # --- the command --------------------------------------------------------

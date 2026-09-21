@@ -231,6 +231,13 @@ def check_track(settings) -> Result:  # noqa: ANN001
             where += f", latest --tab {latest}"
         notes.append(where)
 
+    if settings.track_daily_at:
+        notes.append(
+            f"daily at {settings.track_daily_at}, newest {settings.track_months} month tab(s)"
+        )
+    else:
+        notes.append("no daily run (TRACK_DAILY_AT empty)")
+
     if warnings:
         return Result("track", WARN, "; ".join(warnings + notes))
     return Result("track", OK, "; ".join(notes))

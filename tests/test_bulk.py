@@ -507,3 +507,169 @@ def test_the_same_awb_in_two_months_starts_once(store):
 
     assert plan.to_start == ["48820744846", "93602927993"]
     assert plan.ignored == 1
+
+
+# --- the daily run ------------------------------------------------------
+
+from datetime import datetime  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
+
+TZ = ZoneInfo("Europe/Berlin")
+
+
+def at(hour: int, minute: int = 0, day: int = 21):
+    return datetime(2026, 9, day, hour, minute, tzinfo=TZ)
+
+
+@pytest.fixture
+def readable_logs():
+    """Undo `configure_logging`'s filters on pytest's capture handler.
+
+    `bulk.main` calls configure_logging, which attaches a redactor and a
+    repeat-suppressor to every handler on the root logger -- and in a test
+    run one of those handlers belongs to caplog. So a test that merely runs
+    after a main() test sees an empty caplog, which looks exactly like the
+    code having failed to log anything.
+    """
+    import logging
+
+    root = logging.getLogger()
+    saved = {handler: list(handler.filters) for handler in root.handlers}
+    for handler in root.handlers:
+        handler.filters = []
+    yield
+    for handler, filters in saved.items():
+        handler.filters = filters
+
+
+def test_nothing_runs_before_the_hour():
+    from lej_cc.bulk import due_today
+
+    assert due_today(at(5, 59), "06:00", None) is False
+    assert due_today(at(6, 0), "06:00", None) is True
+
+
+def test_it_does_not_run_twice_in_a_day():
+    from lej_cc.bulk import due_today
+
+    assert due_today(at(9), "06:00", "2026-09-21") is False
+    assert due_today(at(9), "06:00", "2026-09-20") is True
+
+
+def test_a_bot_that_was_asleep_at_six_catches_up_at_nine():
+    """Missing a whole day because the PC slept is the failure to avoid."""
+    from lej_cc.bulk import due_today
+
+    assert due_today(at(9), "06:00", None) is True
+
+
+def test_an_empty_time_keeps_it_off():
+    from lej_cc.bulk import due_today
+
+    assert due_today(at(23), "", None) is False
+
+
+def test_a_malformed_time_is_off_rather_than_every_tick(caplog, readable_logs):
+    import logging
+
+    from lej_cc.bulk import due_today
+
+    with caplog.at_level(logging.ERROR, logger="lej_cc.bulk"):
+        assert due_today(at(23), "6am", None) is False
+    assert "TRACK_DAILY_AT" in caplog.text
+
+
+def _daily_settings(tmp_path, **kwargs):
+    return Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3", slack_ops_channel=CHANNEL,
+        report_sheet_id="report-abc", track_daily_at="06:00",
+        **kwargs,
+    )
+
+
+def test_a_daily_run_starts_what_is_new_and_records_the_date(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = _daily_settings(tmp_path)
+    store = JobStore(settings.database_path)
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: ["2026.08", "2026.09"])
+    monkeypatch.setattr(
+        bulk, "read_from_sheet", lambda *a, **k: ["AWB", "488-20744846", "936-02927993"]
+    )
+
+    summary = bulk.scheduled_import(settings, store)
+
+    assert "started 2" in summary
+    assert len(store.list_all_jobs()) == 2
+    assert store.get_meta(bulk.LAST_RUN_KEY) == datetime.now(TZ).date().isoformat()
+    assert store.list_all_jobs()[0].source == "daily"
+
+
+def test_the_second_call_the_same_day_does_nothing(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = _daily_settings(tmp_path)
+    store = JobStore(settings.database_path)
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: ["2026.09"])
+    monkeypatch.setattr(bulk, "read_from_sheet", lambda *a, **k: ["488-20744846"])
+
+    bulk.scheduled_import(settings, store)
+    assert bulk.scheduled_import(settings, store) is None
+    assert len(store.list_all_jobs()) == 1
+
+
+def test_an_unreachable_report_is_logged_and_not_retried_all_day(
+    tmp_path, monkeypatch, caplog, readable_logs
+):
+    """A report that fails must not be hit again on every 30-second tick."""
+    from lej_cc import bulk
+
+    settings = _daily_settings(tmp_path)
+    store = JobStore(settings.database_path)
+
+    calls = []
+
+    def boom(*_a, **_k):
+        calls.append(1)
+        raise RuntimeError("403 permission denied")
+
+    monkeypatch.setattr(bulk, "resolve_tabs", boom)
+
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="lej_cc.bulk"):
+        assert bulk.scheduled_import(settings, store) is None
+        assert bulk.scheduled_import(settings, store) is None
+
+    assert len(calls) == 1, "a failing report must not be retried every tick"
+    assert "could not read the report" in caplog.text
+
+
+def test_daily_tracking_off_by_default(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = Settings(
+        slack_bot_token="x", slack_app_token="x", portground_api_key="k",
+        database_path=tmp_path / "j.sqlite3", slack_ops_channel=CHANNEL,
+        report_sheet_id="report-abc",
+    )
+    called = []
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: called.append(1) or [])
+
+    assert bulk.scheduled_import(settings, JobStore(settings.database_path)) is None
+    assert called == []
+
+
+def test_a_daily_limit_caps_the_batch(tmp_path, monkeypatch):
+    from lej_cc import bulk
+
+    settings = _daily_settings(tmp_path, track_daily_limit=1)
+    store = JobStore(settings.database_path)
+    monkeypatch.setattr(bulk, "resolve_tabs", lambda *a, **k: ["2026.09"])
+    monkeypatch.setattr(
+        bulk, "read_from_sheet", lambda *a, **k: ["488-20744846", "936-02927993"]
+    )
+
+    bulk.scheduled_import(settings, store)
+    assert len(store.list_all_jobs()) == 1

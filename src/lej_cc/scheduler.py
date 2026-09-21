@@ -97,6 +97,21 @@ class PollScheduler:
         except Exception:  # noqa: BLE001 - a nudge must never take the app down
             log.exception("nudged tick failed")
 
+    def daily_track(self) -> None:
+        """Read the report and start whatever is new, once a day.
+
+        The bot does this itself rather than through cron because it already
+        runs all day and cron does not: under WSL the daemon is not started
+        unless somebody remembered, and a schedule that silently never fires
+        is worse than no schedule. Here it is visible in the log, it catches
+        up after a restart, and it moves to the server with everything else.
+        """
+        from .bulk import scheduled_import
+
+        summary = scheduled_import(self.tracker.settings, self.store)
+        if summary:
+            self.nudge()  # do not wait a full tick to poll what was just started
+
     def housekeeping(self, interval_seconds: int = 3600) -> None:
         """Purge stale downloads, at most once per `interval_seconds`."""
         now = time.monotonic()
@@ -120,6 +135,7 @@ class PollScheduler:
             try:
                 self.tick()
                 self.housekeeping()
+                self.daily_track()
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 log.exception("scheduler tick failed")
             self._stop.wait(self.tick_seconds)

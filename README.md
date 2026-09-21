@@ -249,6 +249,26 @@ Reading a Google Sheet needs the report shared with the service account as
 **Reader** -- the bot has no reason to be able to change an operational
 report. Set `REPORT_SHEET_ID` to skip passing the id every time.
 
+### Every morning, without cron
+
+    TRACK_DAILY_AT=06:00
+    TRACK_MONTHS=2
+    TRACK_DAILY_LIMIT=0
+
+The bot does this itself, on its own tick, rather than through cron. Under
+WSL the cron daemon is not running unless somebody remembered to start it,
+and a schedule that silently never fires is worse than no schedule; doing it
+in-process also means it appears in the log, survives a restart, and moves
+to the server with everything else.
+
+It **catches up** rather than skipping: a bot that was asleep at 06:00 and
+starts at 09:00 still picks up that day. It runs once per calendar day, and
+records the date *before* the work, so a report that is unreachable is not
+retried on every thirty-second tick for the rest of the day.
+
+`awb doctor` prints the schedule, so "is it on?" is answerable without
+reading `.env`.
+
 ### Backfilling
 
 The live path keeps rows current as it polls. To write everything the bot

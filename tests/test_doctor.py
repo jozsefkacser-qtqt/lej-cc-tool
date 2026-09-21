@@ -399,3 +399,15 @@ def test_the_latest_month_tab_is_chosen_chronologically():
 
     assert latest_month_tab({"2026.09", "2026.12", "2027.01"}) == "2027.01"
     assert latest_month_tab({"TEMPLATE", "SLAs"}) is None
+
+
+def test_the_daily_schedule_is_reported(tmp_path):
+    settings = _sheet_settings(
+        tmp_path, slack_status_channel="C1", track_daily_at="06:00", track_months=2
+    )
+    assert "daily at 06:00, newest 2 month tab(s)" in doctor.check_track(settings).detail
+
+
+def test_no_daily_schedule_says_so(tmp_path):
+    settings = _sheet_settings(tmp_path, slack_status_channel="C1")
+    assert "no daily run" in doctor.check_track(settings).detail
