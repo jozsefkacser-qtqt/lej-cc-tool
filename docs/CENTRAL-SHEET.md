@@ -178,3 +178,10 @@ The `sheet` line names the spreadsheet the bot is actually pointed at. It
 fails with the distinction that matters — wrong id versus not shared — and
 warns if the id resolves to a title like "Daily Report", because that would
 mean the bot is about to add a tab to a document people maintain by hand.
+
+The `track` line covers `awb track` separately, because it depends on a
+different file with different sharing: the channel the cards will post to,
+the Google client, and whether the report is readable. When it is, the line
+names the newest month tab, which is the argument `--tab` usually wants.
+
+    [  ok  ] track   posts to C0C05GFT40H; reads 'Daily Report_LEJ' (20 tabs), latest --tab 2026.09
